@@ -20,7 +20,7 @@ Example draft:
 
 Descriptions may quote readable test text directly. Avoid adding architecture assumptions, failure labels, or outcomes. Do not claim full suite coverage when discovery was restricted by tags, environment, project configuration, or missing dependencies.
 
-Commands (replace `<helper>` with the installed sibling `rank-tests/scripts/run.py`):
+Commands (replace `<helper>` with the absolute path to `scripts/run.py` inside this installed skill):
 
 ```bash
 python3 <helper> --root <repo> index-status

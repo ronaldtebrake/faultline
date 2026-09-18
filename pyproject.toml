@@ -14,5 +14,5 @@ dependencies = []
 faultline = "faultline.cli:main"
 
 [tool.setuptools.packages.find]
-where = ["skills/rank-tests/scripts"]
+where = ["skills/faultline/scripts"]
 include = ["faultline*"]

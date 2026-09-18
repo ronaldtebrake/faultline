@@ -1,0 +1,14 @@
+{
+  "name": "faultline",
+  "owner": {
+    "name": "ronaldtebrake",
+    "url": "https://github.com/ronaldtebrake"
+  },
+  "plugins": [
+    {
+      "name": "faultline",
+      "source": "./",
+      "description": "Agent-native semantic test ranking with Jev."
+    }
+  ]
+}

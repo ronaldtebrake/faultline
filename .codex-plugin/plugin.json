@@ -1,0 +1,33 @@
+{
+  "name": "faultline",
+  "version": "0.1.0",
+  "description": "Agent-native semantic test ranking with Jev.",
+  "author": {
+    "name": "ronaldtebrake",
+    "url": "https://github.com/ronaldtebrake"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Faultline",
+    "shortDescription": "Understand tests and rank their relevance to a change with Jev.",
+    "longDescription": "Build inspectable test catalogs, rank changes with Jev, and compare frozen predictions with historical regression evidence.",
+    "developerName": "ronaldtebrake",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Use Faultline to index this repository\u2019s tests.",
+      "Use Faultline to analyze one PR and save a report."
+    ]
+  },
+  "homepage": "https://github.com/ronaldtebrake/faultline",
+  "repository": "https://github.com/ronaldtebrake/faultline",
+  "keywords": [
+    "testing",
+    "regressions",
+    "skills",
+    "jev"
+  ]
+}

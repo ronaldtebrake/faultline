@@ -1,11 +1,11 @@
 # Faultline implementation and validation plan
 
-Faultline is an agent-native semantic test-ranking plugin, initially distributed as Agent Skills. The agent understands repositories and gathers evidence; Jev provides bounded relevance judgments; deterministic code owns ranking, caching, and measurements.
+Faultline is an agent-native semantic test-ranking plugin, distributed as an Agent Skill and native plugins. The agent understands repositories and gathers evidence; Jev provides bounded relevance judgments; deterministic code owns ranking, caching, and measurements.
 
 ## Architecture and boundaries
 
 - The agent handles discovery, source understanding, stable runner identities, Git/hosting operations, historical-result interpretation, and miss analysis. There are no framework adapters or hosting clients in the core.
-- Two portable skills, `index-tests` and `rank-tests`, share a standard-library-only Python helper bundled inside `rank-tests`. An optional Python package exposes the same CLI. No MCP server or hosted service is required.
+- One self-contained `faultline` skill includes indexing, ranking, and reporting workflows plus a standard-library-only Python helper. Scripts and references stay inside the skill so selective Skills CLI installation is complete. An optional Python package exposes the same CLI. No MCP server or hosted service is required.
 - Indexing produces `.faultline/index.jsonl`. Ranking receives generic profiles and structured change input. Exact runner locators remain available for future agent/CI execution policies.
 - The default interaction analyzes one PR/MR, including relevant historical snapshots and attempts. A larger historical sample is an explicit request, not an automatic scan.
 - Initial behavior is ranking and local reporting. Test execution, selective validation, test budgets, and CI modification remain outside the proof of concept.
@@ -14,7 +14,7 @@ Faultline is an agent-native semantic test-ranking plugin, initially distributed
 
 Implemented:
 
-- `index-tests` teaches the agent to read repository instructions, discover actual executable tests, use readable labels/source, inspect necessary setup, and describe only demonstrated behavior.
+- The indexing workflow teaches the agent to read repository instructions, discover actual executable tests, use readable labels/source, inspect necessary setup, and describe only demonstrated behavior.
 - Generic profile contract: required `id`, `source`, `description`; optional `runner`, `locator`, `metadata`, and `context_sources`. The helper computes source hashes and records skill/agent provenance.
 - Incremental indexing preserves unchanged entries, replaces changed/new entries, and removes tests omitted from a complete rediscovered inventory. Full-file hashes conservatively invalidate sibling cases. Declared setup/helper sources also affect hashes.
 - `index-status`, `index show`, and `explain-test` make the catalog inspectable. Discovery completeness and undeclared dependencies remain the agent's responsibility.
@@ -25,7 +25,7 @@ Acceptance: demonstrate complete discovery and incremental updates in a real rep
 
 Implemented:
 
-- `rank-tests` gathers cumulative PR/MR context and the actual tested revision. Revision IDs are provenance, not a standalone commit-ranking UX.
+- The ranking workflow gathers cumulative PR/MR context and the actual tested revision. Revision IDs are provenance, not a standalone commit-ranking UX.
 - Versioned evaluator `relevance-v1`, using a fixed Choice question and five definitions: irrelevant, weak, plausible, strong, direct. Initial model: `jev-1.13.0`, configurable only as a pinned version.
 - Probability validation, expected relevance scoring with values 0–4, and deterministic test-ID tie-breaking. The agent never modifies scores or order.
 - `rank` / `jev-evaluate` accept structured change/catalog files, expose a network-free dry run, cache each test judgment, and save full probabilities plus a readable ranking. Cache identity includes relevant change input, snapshot, profile, question/schema, and model configuration.
@@ -34,7 +34,7 @@ Implemented:
 
 Acceptance: inspect rankings for several real changes; verify unrelated tests score low and relevant cross-behavior tests appear high. Live service access and ranking quality remain unverified. Offline tests exercise the HTTP contract, invalid probabilities, interruption/reuse, request limits, model versions, and credential-safe errors.
 
-**Milestone 1:** two installable skills, inspectable incremental catalogs, one-change semantic ranking, probability evidence, deterministic order, and local caches. Code and skill packaging are implemented; real-change validation is the next experiment.
+**Milestone 1:** an installable self-contained skill, inspectable incremental catalogs, one-change semantic ranking, probability evidence, deterministic order, and local caches. Code and skill packaging are implemented; real-change validation is the next experiment.
 
 ## Stage 3 — Historical evidence without hindsight
 
@@ -73,8 +73,8 @@ Acceptance: a real single-PR request ends with an understandable case report and
 
 ## Distribution and validation
 
-- Both skills are installed together. A local installer supports links or copies without overwriting existing skills. The copied bundle is tested with Python third-party packages disabled.
-- Python package installation is optional. Host-specific plugin wrappers and marketplace publishing are deferred until the workflow is validated.
+- The Skills CLI installs `skills/faultline/`, including all scripts and references. A standalone copied bundle is tested with Python third-party packages disabled. The custom Python installer has been removed.
+- Native Codex and Claude Code manifests and repository marketplace catalogs wrap the same skill. A portable Agent Plugins manifest identifies the package. Python package installation remains optional contributor tooling. Remote installs require the packaging revision to be pushed; public-directory publishing is separate future work.
 - The README explains the project; `docs/install.md` documents setup and invocation. Schema/behavior details live with the skills.
 - No implementation test uses a live Jev key or downloads private repository history.
 - Next: install into a separate repository, review the index, run an outcome-blind real-change ranking, and evaluate the resulting report. Record failures of the workflow before expanding the sample.

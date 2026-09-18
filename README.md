@@ -2,7 +2,7 @@
 
 **Faultline is an agent-native semantic test-ranking plugin. It teaches your coding agent to understand your test suite, then uses a fast evaluation model to rank which tests are most likely to expose regressions from a change.**
 
-The first release is distributed as two Agent Skills with a small, portable Python helper. It is a proof of concept: the mechanics are implemented and tested offline, while ranking quality still needs to be measured on real changes.
+Faultline ships as one self-contained Agent Skill, with native Codex and Claude Code plugin packaging. Its evaluation scripts travel with the skill. It is a proof of concept: the mechanics are implemented and tested offline, while ranking quality still needs to be measured on real changes.
 
 ## Why this exists
 
@@ -32,13 +32,23 @@ Agent: repository understanding → test catalog + change context
                            Agent: interpret evidence and misses
 ```
 
-## Two skills, one workflow
+## Install
 
-`index-tests` builds and updates `.faultline/index.jsonl` using the agent's repository knowledge. It preserves exact runner identities and describes behavior supported by the source.
+Using the [Skills CLI](https://github.com/vercel-labs/skills), run this from the repository you want to analyze:
 
-`rank-tests` prepares a change and invokes the fixed Jev evaluator. When asked to analyze a historical PR/MR, it also collects outcomes after freezing the prediction, compares the evidence, and saves a report in the same interaction. Start with one PR/MR; additional cases can accumulate gradually.
+```bash
+npx skills add git@github.com:ronaldtebrake/faultline.git --skill faultline
+```
 
-[Install the skills in another repository](docs/install.md). The helper needs Python 3.10+ and no third-party runtime packages or MCP server.
+Choose your agent when prompted, or add `--agent codex` or `--agent claude-code`. Private repository access uses your existing Git credentials. Python 3.10+ is needed to run the bundled evaluator; no pip install or third-party Python packages are required.
+
+Native Codex and Claude Code plugin installation, local development, and API setup are covered in [the setup guide](docs/install.md). Choose one installation method.
+
+## One skill, the whole workflow
+
+Ask your agent to “Use Faultline to index this repository’s tests,” then “Use Faultline to analyze PR 123 and save a report.” Indexing preserves exact runner identities and describes behavior supported by the source.
+
+For historical analysis, the agent freezes the ranking before collecting outcomes, compares the evidence, and saves findings and a report in the same interaction. Start with one PR/MR; additional cases accumulate gradually. Saved reports can be regenerated without API calls.
 
 ## Evidence before execution policy
 

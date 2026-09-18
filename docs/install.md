@@ -1,69 +1,99 @@
 # Install and try Faultline
 
-Faultline currently ships as two Agent Skills, not a hosted service or an MCP server. The agent performs repository discovery and history collection. A bundled Python helper validates the inputs, talks to Jev, and calculates rankings and reports.
+Faultline bundles one Agent Skill and its evaluation scripts. Install it with the Skills CLI or your agent's native plugin manager. Both use the same `skills/faultline/` directory; no separate Python installer or package installation is needed.
 
 ## Requirements
 
-- Python 3.10 or later.
-- A coding agent with repository, file, and shell access and support for Agent Skills.
-- `TYPESAFE_API_KEY` available to the agent's shell for live ranking. Indexing, dry runs, and offline reports do not need it.
-- Your usual authenticated Git/hosting tools for PR/MR work. For GitHub, the agent can use `gh` with your existing authentication.
+- An agent that supports Agent Skills, with repository, file, and shell access.
+- Python 3.10+ to run the bundled evaluator, with no third-party Python runtime packages.
+- Node.js/npm when using `npx skills`; native plugin installation does not require npm.
+- Existing Git credentials for this private repository, and authenticated hosting tools for PR/MR analysis.
+- `TYPESAFE_API_KEY` in the agent's shell environment for live ranking. Indexing, dry runs, and saved reports work without it. Selected change text and test descriptions are sent to TypeSafe.
 
-No third-party Python runtime packages are required. Live ranking sends the supplied change text and test descriptions to TypeSafe. Nothing in the installer sends repository contents anywhere.
+## Skills CLI
 
-## Local checkout installation
-
-From your Faultline checkout, install both skills into the target repository's skill directory:
-
-```bash
-python3 scripts/install_skills.py --target /path/to/target-repo/.agents/skills
-```
-
-The default creates symlinks to this checkout, so local updates are immediately available. The installer refuses to overwrite unrelated existing skills. Use `--copy` for a self-contained copy; copied installations must be replaced deliberately when updating.
-
-For Codex, repository skills belong in `.agents/skills`, or use `~/.agents/skills` for user-wide installation. Codex supports symlinked skill directories. See the [official skill documentation](https://developers.openai.com/codex/skills/). Other agents have their own skill locations and invocation UX; install the same two directories together in the location they support. Cross-agent UI compatibility has not been live-tested.
-
-This adds skill directories to the target repository. To keep a local trial out of commits, add those two paths to the repository's local Git exclude file, or choose user-wide installation instead. Faultline-generated data under `.faultline/` has its own ignore-all file and remains local.
-
-The helper also works directly from the checkout, without installing skills:
+From the repository you want to analyze:
 
 ```bash
-python3 /path/to/faultline/skills/rank-tests/scripts/run.py --help
+npx skills add git@github.com:ronaldtebrake/faultline.git --skill faultline
 ```
 
-An optional console command can be installed in a virtual environment:
+Choose your agent interactively or add `--agent codex` or `--agent claude-code`. Add `--global` for installation across projects. Project installation can create skill directories and a lockfile in the current repository; review these before committing them. No `--target` or manual copying is needed.
+
+The [Skills CLI](https://github.com/vercel-labs/skills) supports private Git sources and copies the selected skill's scripts and references with it. Faultline has no dependencies on sibling skills or repository-root files at runtime. Its Python package is optional developer tooling.
+
+## Native plugins
+
+Choose this instead of Skills CLI installation to let your agent's plugin manager manage the bundle. Do not install both methods in the same scope, which can expose duplicate skills.
+
+### Codex
+
+With a Codex CLI that provides `codex plugin`:
 
 ```bash
-python3 -m venv /path/to/faultline-venv
-/path/to/faultline-venv/bin/python -m pip install /path/to/faultline
-/path/to/faultline-venv/bin/faultline --help
+codex plugin marketplace add git@github.com:ronaldtebrake/faultline.git
+codex plugin add faultline@faultline
 ```
 
-The package provides the helper CLI; install the two skill directories separately for agent discovery. A private Git remote needs no special runtime integration: use the local clone you already have access to.
+The repository includes a marketplace at `.agents/plugins/marketplace.json`, a portable root `plugin.json`, and a `.codex-plugin/plugin.json` compatibility manifest. See [OpenAI's plugin packaging documentation](https://developers.openai.com/plugins/build/plugins).
+
+### Claude Code
+
+In Claude Code:
+
+```text
+/plugin marketplace add git@github.com:ronaldtebrake/faultline.git
+/plugin install faultline@faultline
+```
+
+The `.claude-plugin/` manifests package the same skill and scripts. See [Claude Code's marketplace documentation](https://code.claude.com/docs/en/plugin-marketplaces). Plugin skills are namespaced; use `/faultline:faultline` or ask for Faultline in plain language.
+
+## Try unpublished changes from a local checkout
+
+Remote installation uses the pushed repository revision. To try local work before it is pushed, run this from the repository you want to analyze, replacing the source path with your Faultline checkout:
+
+```bash
+npx skills add /path/to/faultline --skill faultline --agent codex
+```
+
+This installs the skill through the normal Skills CLI. Re-run it after local changes; do not assume the installed bundle is a live link to the source checkout. `--copy` requests copied files rather than agent-directory symlinks.
+
+Native local alternatives:
+
+```bash
+codex plugin marketplace add /path/to/faultline
+codex plugin add faultline@faultline
+```
+
+```bash
+claude --plugin-dir /path/to/faultline
+```
+
+Refresh/restart your agent after installation if the skill is not visible. For migration from the old installer, remove only the old Faultline `index-tests` and `rank-tests` directories or symlinks you previously installed. Their data remains in the target repository's `.faultline/` directory.
 
 ## First trial
 
 In the target repository, ask the agent:
 
 ```text
-Use index-tests to build the Faultline catalog for this repository.
+Use Faultline to build the Faultline catalog for this repository.
 Show the discovered suite coverage and a few representative profiles.
 ```
 
 Then, in a context that has not seen the historical failures:
 
 ```text
-Use rank-tests to analyze PR 123 with Faultline.
+Use Faultline to analyze PR 123 with Faultline.
 Start with this one PR. Freeze predictions before inspecting test outcomes,
 then save the findings and report. Respect the configured request ceilings.
 ```
 
-Use the skill picker or the agent's supported explicit invocation syntax if it does not select the skills from that request. In Codex, you can reference `$index-tests` and `$rank-tests`. Refresh/restart the agent if newly installed skills do not appear.
+Use the skill picker or the agent's supported explicit invocation syntax if it does not select the skill from that request. In Codex, you can reference `$faultline`. Refresh/restart the agent if the newly installed skill do not appear.
 
 For current ranking without retrospective comparison:
 
 ```text
-Use rank-tests to rank the tests for PR 123.
+Use Faultline to rank the tests for PR 123.
 ```
 
 The agent handles the end-to-end request, including input preparation and report generation. There is no framework-discovery `faultline analyze --pr` command: the skill is the orchestrator, while the helper accepts structured files.
@@ -91,14 +121,34 @@ A report may legitimately say performance cannot be assessed: no confirmed regre
 
 The agent can show individual profiles with `explain-test`, regenerate a case with `report --prediction <id>`, or summarize all saved cases with `report`. Reports make no API calls. A one-PR summary remains a case study, not proof of general ranking quality.
 
-Detailed contracts: [index](../skills/index-tests/references/index-schema.md), [evaluator](../skills/rank-tests/references/evaluator.md), [historical reports](../skills/rank-tests/references/report.md).
+Detailed contracts: [index](../skills/faultline/references/index-schema.md), [evaluator](../skills/faultline/references/evaluator.md), [historical reports](../skills/faultline/references/report.md).
 
 ## Development validation
 
 From the Faultline checkout:
 
 ```bash
-PYTHONPATH=skills/rank-tests/scripts python3 -m unittest discover -s tests -v
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=skills/faultline/scripts python3 -m unittest discover -s tests -v
 ```
 
+Distribution has also been checked with a real Skills CLI 1.7.0 local copy installation and the Codex plugin manifest validator. Native Codex/Claude plugin installation and remote private-Git installation have not been exercised end to end.
+
 The suite uses synthetic data and mocked HTTP. It verifies portable installation, incremental indexing, caching, rate-limit handling, probability validation, prediction integrity, outcome separation, metrics, and offline reports. It does not establish live Jev quality or the correctness of an agent's repository interpretation.
+
+## Package layout and contributor tools
+
+```text
+plugin.json                       Portable Agent Plugins metadata
+.codex-plugin/plugin.json         Codex compatibility metadata
+.agents/plugins/marketplace.json  Codex repository marketplace
+.claude-plugin/                   Claude Code plugin and marketplace
+skills/faultline/
+  SKILL.md                        Agent entry point
+  references/                     Indexing, evaluator, and report contracts
+  scripts/run.py                  Bundled helper entry point
+  scripts/faultline/               Standard-library-only evaluation code
+```
+
+Instructions resolve the helper relative to the installed skill, then pass the analyzed repository with `--root`. Installation location and analyzed repository can be different. The helper writes only to the analyzed repository's `.faultline/`; it does not modify the installed bundle.
+
+For contributor use, `python3 skills/faultline/scripts/run.py --help` works directly. An optional `pip install .` in a virtual environment exposes the equivalent `faultline` command; it is not required for skill or plugin installation.

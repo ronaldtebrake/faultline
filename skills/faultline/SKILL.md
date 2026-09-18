@@ -1,17 +1,19 @@
 ---
-name: rank-tests
-description: Rank tests for a PR/MR or other software change using Faultline's fixed Jev evaluator, and evaluate frozen rankings against historical outcomes. Use for semantic test ranking, one-PR retrospective analysis, or explaining Faultline reports.
+name: faultline
+description: Discover and describe a repository's tests, build or update a Faultline catalog, and rank tests for a PR/MR or other software change using Faultline's fixed Jev evaluator, and evaluate frozen rankings against historical outcomes. Use for semantic test ranking, one-PR retrospective analysis, or explaining Faultline reports.
 ---
 
-# Rank tests with Faultline
+# Faultline
 
 You gather repository evidence and interpret findings. Jev supplies semantic judgments. The bundled code owns questions, probability validation, scoring, cache identity, and measurements. Never replace Jev scores or reorder its ranking with your own judgment.
 
-Use `python3 <this-skill>/scripts/run.py --root <repo> ...` (Python 3.10+, no third-party dependencies). An installed `faultline` command is equivalent. Read [the evaluator contract](references/evaluator.md) when preparing a change. For retrospective analysis also read [the history/report contract](references/report.md).
+For indexing requests, read [the indexing workflow](references/indexing.md) and [index contract](references/index-schema.md). For ranking or analysis, follow the flow below. For saved reports, use `report` without new inference.
+
+Resolve `<this-skill>` to the absolute directory containing this installed SKILL.md; never assume it is inside the target repository or writable. Keep generated data in the target repository, not the installed skill. Use `python3 "<this-skill>/scripts/run.py" --root "<repo>" ...` (Python 3.10+, no third-party dependencies). An installed `faultline` command is equivalent. Read [the evaluator contract](references/evaluator.md) when preparing a change. For retrospective analysis also read [the history/report contract](references/report.md).
 
 ## Normal single-change flow
 
-1. Read repository instructions. Use the sibling `index-tests` skill to create/update `.faultline/index.jsonl` when missing or stale. Do not force a framework-specific implementation on the repository.
+1. Read repository instructions. Use [the indexing workflow](references/indexing.md) to create/update `.faultline/index.jsonl` when missing or stale. Do not force a framework-specific implementation on the repository.
 2. Resolve the requested PR/MR and the appropriate base/head/tested revisions with Git and the available hosting tools. Cache evidence under `.faultline/history/`. Use a PR/MR's cumulative change, not each constituent commit as an unrelated change. Do not expose a standalone commit-ranking workflow as the default.
 3. Write structured change input according to the evaluator contract. Keep only pre-outcome context. For an ordinary current ranking, set `provenance.historical` to false.
 4. Run `rank --change <change.json> --dry-run`. Report the expected uncached request count when meaningful. The default ceiling is 100 Jev requests; honor user constraints and configured limits. One test judgment uses one request. The key comes from `TYPESAFE_API_KEY`; never print or persist it. Selected change text and profiles are sent to TypeSafe.

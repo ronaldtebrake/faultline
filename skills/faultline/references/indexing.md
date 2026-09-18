@@ -1,13 +1,8 @@
----
-name: index-tests
-description: Build or update Faultline's inspectable semantic test catalog using the repository's own test discovery tools and source evidence. Use when preparing tests for semantic ranking or inspecting their Faultline profiles.
----
-
 # Index tests with Faultline
 
 You are the repository adaptation layer. Discover tests using the project's conventions and available runner inventory, then describe the behavior each test actually establishes. Faultline does not maintain framework-specific discovery adapters.
 
-Read [the index contract](references/index-schema.md) before writing the catalog. The deterministic helper ships in the sibling `rank-tests` skill at `../rank-tests/scripts/run.py`. Both skill directories must be installed together. Run it with Python 3.10+; no packages or MCP server are needed. An installed `faultline` command exposes the same interface.
+Read [the index contract](index-schema.md) before writing the catalog. The deterministic helper is bundled at `scripts/run.py` inside this skill. Resolve its absolute path from the installed skill directory. Run it with Python 3.10+; no packages or MCP server are needed. An installed `faultline` command exposes the same interface.
 
 ## Workflow
 

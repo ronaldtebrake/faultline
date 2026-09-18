@@ -11,15 +11,14 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 class CLITests(unittest.TestCase):
-    def test_copied_skills_run_without_installation_or_dependencies(self):
+    def test_standalone_skill_runs_without_checkout_or_dependencies(self):
         with tempfile.TemporaryDirectory() as temp:
-            target = Path(temp) / 'skills'
-            result = subprocess.run([sys.executable, str(REPO / 'scripts/install_skills.py'), '--target', str(target), '--copy'], capture_output=True, text=True)
-            self.assertEqual(0, result.returncode, result.stderr)
-            helper = target / 'rank-tests/scripts/run.py'
+            target = Path(temp) / 'installed/faultline'
+            shutil.copytree(REPO / 'skills/faultline', target, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+            helper = target / 'scripts/run.py'
             root = Path(temp) / 'project'
             root.mkdir()
-            env = {k: v for k, v in os.environ.items() if k not in ('PYTHONPATH', 'TYPESAFE_API_KEY')}
+            env = {k: v for k, v in os.environ.items() if k not in ('PYTHONPATH', 'PYTHONDONTWRITEBYTECODE', 'TYPESAFE_API_KEY')}
             init = subprocess.run([sys.executable, '-S', str(helper), '--root', str(root), 'init'], env=env, capture_output=True, text=True)
             self.assertEqual(0, init.returncode, init.stderr)
             self.assertTrue((root / '.faultline/config.json').exists())
@@ -33,14 +32,13 @@ class CLITests(unittest.TestCase):
             scored = subprocess.run([sys.executable, '-S', str(helper), '--root', str(root), 'score', '--input', str(score)], env=env, capture_output=True, text=True)
             self.assertEqual(0, scored.returncode, scored.stderr)
             self.assertEqual(4, json.loads(scored.stdout)['score'])
-            collision = subprocess.run([sys.executable, str(REPO / 'scripts/install_skills.py'), '--target', str(target), '--copy'], capture_output=True, text=True)
-            self.assertNotEqual(0, collision.returncode)
+            self.assertFalse(list(target.rglob('__pycache__')))
 
     def test_malformed_input_returns_actionable_error(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             malformed = root / 'bad.json'
             malformed.write_text('not JSON')
-            result = subprocess.run([sys.executable, str(REPO / 'skills/rank-tests/scripts/run.py'), '--root', str(root), 'rank', '--change', str(malformed)], capture_output=True, text=True)
+            result = subprocess.run([sys.executable, str(REPO / 'skills/faultline/scripts/run.py'), '--root', str(root), 'rank', '--change', str(malformed)], capture_output=True, text=True)
             self.assertEqual(1, result.returncode)
             self.assertNotIn('Traceback', result.stderr)
