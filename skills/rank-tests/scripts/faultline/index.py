@@ -4,16 +4,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .core import VERSION, FaultlineError, digest, relative_source, required_string, write_text
+from .core import VERSION, FaultlineError, digest, relative_source, required_string, write_text, reject_constant
 
 
 def load_profiles(path: Path) -> list[dict]:
     try:
         text = path.read_text()
         if text.lstrip().startswith("["):
-            profiles = json.loads(text)
+            profiles = json.loads(text, parse_constant=reject_constant)
         else:
-            profiles = [json.loads(line) for line in text.splitlines() if line.strip()]
+            profiles = [json.loads(line, parse_constant=reject_constant) for line in text.splitlines() if line.strip()]
     except (ValueError, OSError):
         raise FaultlineError(f"Cannot read test catalog: {path}; expected JSONL or a JSON array") from None
     if not isinstance(profiles, list):

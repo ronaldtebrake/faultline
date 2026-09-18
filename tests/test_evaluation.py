@@ -98,3 +98,30 @@ class EvaluationTests(unittest.TestCase):
         self.evaluate(root, store, third, outcomes(third['prediction_id']))
         summary = read_json(Path(aggregate(store)['json']))
         self.assertEqual(2, len(summary['groups']))
+
+    def test_timestamp_offsets_select_actual_earliest_run(self):
+        root, store, ranked, evidence = self.prepare()
+        first = evidence['runs'][0]
+        first['started_at'] = '2026-01-01T10:00:00+02:00'
+        other = copy.deepcopy(first)
+        other['id'] = 'run-2'
+        other['started_at'] = '2026-01-01T09:00:00+00:00'
+        evidence['runs'].append(other)
+        _, findings = self.evaluate(root, store, ranked, evidence)
+        self.assertEqual('run-1', findings['selected_run']['id'])
+        first['started_at'] = 'not-a-date'
+        with self.assertRaises(FaultlineError):
+            self.evaluate(root, store, ranked, evidence)
+
+    def test_changed_catalog_is_a_separate_experiment(self):
+        root, store, ranked, evidence = self.prepare()
+        self.evaluate(root, store, ranked, evidence)
+        from faultline.index import build_index
+        draft = read_json(root / 'draft.json')
+        draft[0]['description'] = 'New description after review'
+        write_json(root / 'draft.json', draft)
+        build_index(store, root / 'draft.json', 'test-agent', rewrite=True)
+        changed = rank(store, root / 'change.json', evaluator=FakeEvaluator())
+        self.evaluate(root, store, changed, outcomes(changed['prediction_id']))
+        summary = read_json(Path(aggregate(store)['json']))
+        self.assertEqual(2, len(summary['groups']))

@@ -6,6 +6,7 @@ import random
 import re
 from collections import Counter
 from pathlib import PurePosixPath
+from datetime import datetime
 
 from .core import SCHEMA, FaultlineError, digest, now, number, read_json, required_string, write_json, write_text
 from .workflow import load_prediction
@@ -13,6 +14,18 @@ from .workflow import load_prediction
 CLASSIFICATIONS = ("confirmed_regression", "likely_flake", "infrastructure", "baseline", "unknown")
 STATUSES = ("passed", "failed", "error", "skipped", "unknown")
 CUTOFFS = (1, 5, 10, 20, 50)
+
+
+def time_key(value):
+    if value is None:
+        return float('inf')
+    try:
+        parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+        if parsed.tzinfo is None:
+            raise ValueError()
+        return parsed.timestamp()
+    except (AttributeError, ValueError, TypeError):
+        raise FaultlineError('Run timestamps must be ISO 8601 strings with timezone, or omitted') from None
 
 
 def tokens(text):
@@ -68,6 +81,9 @@ def validate_outcomes(data, prediction):
     for run in data['runs']:
         for key in ('id', 'snapshot', 'status'):
             required_string(run, key)
+        time_key(run.get('started_at'))
+        if not isinstance(run.get('notes', []), list) or not all(isinstance(n, str) for n in run.get('notes', [])):
+            raise FaultlineError('Run notes must be an array of strings')
         attempt = run.get('attempt', 1)
         if not isinstance(attempt, int) or isinstance(attempt, bool) or attempt < 1:
             raise FaultlineError('Run attempt must be a positive integer')
@@ -167,7 +183,7 @@ def evaluate(store, prediction_file, outcomes_file, config):
     runs = [compare_run(run, prediction, orders, eligible) for run in outcomes['runs']]
     usable = [run for run in runs if run['eligible']]
     # Selection uses evidence timing, never a favorable semantic score; reruns count once.
-    selected = min(usable, key=lambda r: (r['started_at'] or '', r['id'], r['attempt'])) if usable else None
+    selected = min(usable, key=lambda r: (time_key(r['started_at']), r['id'], r['attempt'])) if usable else None
     identifier = digest({'prediction': prediction['integrity'], 'outcomes': outcomes,
                          'seed': config['random_seed'], 'evaluation_schema': SCHEMA})
     path = store.path / 'evaluations' / identifier
@@ -179,7 +195,9 @@ def evaluate(store, prediction_file, outcomes_file, config):
                 'assessment': 'exploratory_case' if selected else 'not_assessable',
                 'baseline_orders': orders, 'random_seed': config['random_seed'],
                 'ranking': prediction['ranking'], 'profiles': prediction['profiles'],
-                'change': prediction['change'], 'limitations': prediction['limitations'],
+                'change': prediction['change'], 'outcomes': outcomes, 'limitations': prediction['limitations'],
+                'score_distribution': {'winning_levels': dict(Counter(r['choice'] for r in prediction['ranking'])),
+                                       'mean_score': sum(r['score'] for r in prediction['ranking']) / len(prediction['ranking'])},
                 'usage': {'requests': prediction['requests_this_run'], 'cache_hits': prediction['cache_hits'],
                           'cost': None, 'model_usage': [r.get('usage') for r in prediction['ranking']]}}
     if not (path / 'findings.json').exists():

@@ -1,51 +1,55 @@
 # Faultline
 
-Faultline is an experiment in using TypeSafe Jev to rank automated tests by their relevance to a software change. The goal is to surface regression failures earlier, with an approach that works across projects, programming languages, and test frameworks.
+**Faultline is an agent-native semantic test-ranking plugin. It teaches your coding agent to understand your test suite, then uses a fast evaluation model to rank which tests are most likely to expose regressions from a change.**
 
-## The problem
+The first release is distributed as two Agent Skills with a small, portable Python helper. It is a proof of concept: the mechanics are implemented and tested offline, while ranking quality still needs to be measured on real changes.
 
-An expensive test suite can take a long time to reveal a regression, even when a change affects only a small part of a system. The test that detects the problem may run near the end.
+## Why this exists
 
-File paths, dependency graphs, and code coverage provide useful signals about which tests matter. But changes can also affect related behaviors across those boundaries. Faultline aims to capture those semantic relationships without requiring a manually maintained project taxonomy.
+Large test suites can take a long time to reveal a regression. The test that detects the problem may execute near the end, leaving developers and coding agents waiting for useful feedback.
 
-## The hypothesis
+Paths, dependencies, coverage, and failure history provide useful signals. But a change can affect related behaviors across those boundaries. Faultline investigates whether comparing a change directly with the behavior protected by each test can bring relevant failures forward.
 
-Does the behavior described by a test contain enough information to identify whether it could detect a regression introduced by a particular change?
+## The agent understands the repository
 
-Faultline will compare the intent and code diff of a change with descriptions of the behaviors protected by tests. If that comparison is useful, relevant tests should move toward the beginning of the ranked suite and provide failure signals sooner.
+Your coding agent discovers the test framework, reads the tests and their setup, and creates an inspectable description of what each test demonstrates. It uses the repository's own tools to identify executable tests and retrieve change context.
 
-Or potentially be the only test that are going to run.
+This makes the agent the adaptation layer. Faultline does not need its own PHPUnit, Jest, Playwright, or other framework adapters. Each test becomes a generic profile with an exact identity, source, description, hashes, and provenance. Unchanged profiles can be reused.
 
-## Jev’s role
+## Jev judges relevance
 
-We intend to use Jev to answer a bounded question for each change–test pair: **How much regression-detection value does this test have for this change?**
+Jev receives the change context and a test's description, then answers a fixed question: **How much regression-detection value does this test have for this change?**
 
-The proposed approach uses probabilities over relevance levels, from irrelevant to direct, to calculate a ranking. Faultline will retain those judgments for inspection and use application code to determine the order. A relevance score describes the relationship between a change and a test; it is not a calibrated probability that the test will fail. Jev’s supported integration and probability output still need to be verified.
+Faultline converts probabilities over five relevance levels into a deterministic ranking. The agent can explain the result, but cannot change the scores or reorder tests based on its intuition. Full probability distributions remain available for inspection. A relevance score is not a calibrated probability that a test will fail.
 
 ```text
-Change intent + code diff + test behavior
-                    ↓
-             Jev relevance judgment
-                    ↓
-              Ranked test suite
-                    ↓
-       Comparison with historical failures
+Agent: repository understanding → test catalog + change context
+                                           ↓
+                              Jev: bounded relevance judgment
+                                           ↓
+                             Faultline: deterministic ranking
+                                           ↓
+                           Agent: interpret evidence and misses
 ```
 
-## How we’ll assess it
+## Two skills, one workflow
 
-The first experiment will compare rankings with confirmed regressions in historical test results. We will measure where known failing tests appear and, where duration data supports a fair comparison, estimate how soon those failures could have been discovered.
+`index-tests` builds and updates `.faultline/index.jsonl` using the agent's repository knowledge. It preserves exact runner identities and describes behavior supported by the source.
 
-Jev’s rankings will be compared with existing execution order, random order, path-based heuristics, and lexical similarity. The question is whether semantic judgment provides useful improvement over those simpler approaches.
+`rank-tests` prepares a change and invokes the fixed Jev evaluator. When asked to analyze a historical PR/MR, it also collects outcomes after freezing the prediction, compares the evidence, and saves a report in the same interaction. Start with one PR/MR; additional cases can accumulate gradually.
 
-Historical outcomes will remain separate from ranking inputs. Reports will highlight poor rankings, missing evidence, and changes in the test suite over time. Green runs can help assess how selective and stable the rankings are, but cannot prove that any tests were unnecessary. A negative result is useful if it shows that a simpler method is sufficient.
+[Install the skills in another repository](docs/install.md). The helper needs Python 3.10+ and no third-party runtime packages or MCP server.
 
-## Initial boundaries
+## Evidence before execution policy
 
-The initial tool will perform local analysis and rank the complete test catalog. It will not skip tests, change CI, trigger workflows, or decide whether a change is safe to merge. Influencing execution order or selecting tests belongs to later work, if the evidence supports it.
+Historical evaluation asks where confirmed failing tests appear in the ranking. Faultline compares those positions with lexical, path-based, seeded-random, and verified historical-order baselines. Where durations permit, it estimates serial time to a known failure without claiming that serial sums describe parallel CI wall-clock time.
 
-Local analysis still involves sending selected change context and test descriptions to Jev. Historical data and reports will remain local by default.
+Predictions are frozen before the agent reads outcomes. Reports distinguish confirmed regressions, likely flakes, infrastructure failures, baseline failures, and unknowns. Missing evidence is never treated as a passing test. A single PR is a case study; a green run cannot establish that low-ranked tests were unnecessary.
 
-## Status
+The initial release ranks and reports. It does not run tests, skip tests, trigger workflows, or modify CI. The catalog, runner locators, and structured rankings give both agents and future CI integrations a reusable basis for execution ordering, fast feedback jobs, and eventually explicit test budgets—if the evidence supports those policies.
 
-Faultline is planned and unimplemented. The remaining work, technical requirements, and milestones are described in the [implementation plan](PLAN.md).
+## Local data and external evaluation
+
+Catalogs, cached predictions, and reports stay under the target repository's ignored `.faultline/` directory. Selected change text and test descriptions are sent to Jev using `TYPESAFE_API_KEY`. Requests are paced, bounded, cached, and resumable. Repository history collection uses the agent's existing authenticated tools.
+
+The implementation and remaining validation work are tracked in [PLAN.md](PLAN.md). Installation, usage, and testing instructions are in [the setup guide](docs/install.md).

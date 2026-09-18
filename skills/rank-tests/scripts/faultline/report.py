@@ -6,7 +6,7 @@ import math
 import statistics
 
 from .core import FaultlineError, digest, read_json, write_json, write_text
-from .evaluation import CUTOFFS
+from .evaluation import CUTOFFS, time_key
 
 
 def md(value):
@@ -37,15 +37,21 @@ def case_markdown(findings):
             lines.append('These estimates do not establish a wall-clock improvement over parallel or unknown CI scheduling.')
         if selected.get('historical_order_unavailable'):
             lines.append(selected['historical_order_unavailable'] + '.')
+    if selected:
+        semantic = selected['metrics']['semantic']
+        lines += ['', '### Semantic ranking cutoffs', '', '| Top K | At least one known failure | Known failing-test recall |', '| ---: | ---: | ---: |']
+        for k in CUTOFFS:
+            lines.append(f"| {k} | {semantic['hit_at'][str(k)]} / 1 case | {semantic['recall_at'][str(k)]:.2%} |")
     lines += ['', '## Evidence coverage', '', '| Run / attempt | Status | Matched / reported | Included | Exclusions |',
               '| --- | --- | ---: | --- | --- |']
     for run in findings['runs']:
         lines.append(f"| {md(run['id'])} / {run['attempt']} | {md(run['status'])} | {run['matched_tests']} / {run['reported_tests']} | {'yes' if run['eligible'] else 'no'} | {md('; '.join(run['exclusions']))} |")
+    lines += ['', '[Full outcome evidence](outcomes.json)', '']
+    for run in findings['runs']:
         if run['classification_counts']:
-            lines.append('')
-            lines.append(f"Classifications for {md(run['id'])}: {md(run['classification_counts'])}.")
-            lines.append('')
-    lines += ['', '## Worst misses', '']
+            lines.append(f"- Classifications for {md(run['id'])}: {md(run['classification_counts'])}.")
+        lines.extend(f"- {md(run['id'])}: {md(note)}" for note in run.get('notes', []))
+    lines += ['', '## Confirmed failures, worst rank first', '']
     profiles = {p['id']: p for p in findings['profiles']}
     scores = {r['id']: r for r in findings['ranking']}
     misses = [(run, miss) for run in findings['runs'] if run['eligible'] for miss in run.get('worst_misses', [])]
@@ -59,12 +65,17 @@ def case_markdown(findings):
         row, profile = scores[miss['id']], profiles[miss['id']]
         lines += [f"- Rank {miss['rank']} / {len(profiles)}: **{md(miss['id'])}**. {md(profile['description'])}",
                   f"  Score {row['score']:.4f}; probabilities: {md(row['probabilities'])}."]
+    distribution = findings.get('score_distribution', {})
+    lines += ['', '## Score distribution', '', f"Mean relevance score: {distribution.get('mean_score', 0):.3f} / 4.", '', '| Winning relevance level | Tests |', '| --- | ---: |']
+    for label, count in distribution.get('winning_levels', {}).items():
+        lines.append(f"| {md(label)} | {count} |")
+    lines += ['', 'Selectivity describes the ranking; it is not evidence that unexecuted tests were unnecessary.']
     lines += ['', '## Ranking', '', '| Rank | Score | Test |', '| ---: | ---: | --- |']
     lines += [f"| {i} | {row['score']:.4f} | {md(row['id'])} |" for i, row in enumerate(findings['ranking'], 1)]
     lines += ['', '## Provenance and limitations', '',
               f"Reviewed by: {md(findings['reviewer'])}.",
               f"Index hash: {findings['index_hash']}.",
-              f"Jev requests during prediction: {findings['usage']['requests']}; cache hits: {findings['usage']['cache_hits']}. Cost is not estimated.",
+              f"Jev requests during prediction: {findings['usage']['requests']}; cache hits: {findings['usage']['cache_hits']}. Cost is not estimated.", '',
               *[f"- {md(note)}" for note in findings['limitations']],
               '- Failure classification is supplied with evidence by the agent or reviewer, not inferred from red CI status.',
               '- Green runs can describe ranking selectivity but cannot establish regression recall.',
@@ -100,8 +111,8 @@ def aggregate(store):
         raise FaultlineError('No saved evaluations to summarize')
     groups = {}
     for item in findings:
-        key = digest([item['repository'], item['evaluator'], item['random_seed']])
-        group = groups.setdefault(key, {'repository': item['repository'], 'evaluator': item['evaluator'], 'cases': {}})
+        key = digest([item['repository'], item['evaluator'], item['random_seed'], item['index_hash']])
+        group = groups.setdefault(key, {'repository': item['repository'], 'evaluator': item['evaluator'], 'index_hash': item['index_hash'], 'cases': {}})
         cases = group['cases'].setdefault(item['change_id'], [])
         cases.append(item)
     output = []
@@ -110,7 +121,7 @@ def aggregate(store):
         for cases in group.pop('cases').values():
             eligible = [c for c in cases if c['selected_run']]
             if eligible:
-                chosen.append(min(eligible, key=lambda c: (c['selected_run'].get('started_at') or '', c['snapshot'], c['prediction_id'])))
+                chosen.append(min(eligible, key=lambda c: (time_key(c['selected_run'].get('started_at')), c['created_at'], c['snapshot'], c['prediction_id'])))
             else:
                 chosen.append(max(cases, key=lambda c: c['created_at']))
         valid = [c for c in chosen if c['selected_run']]
@@ -130,12 +141,13 @@ def aggregate(store):
                        'case_selection': 'Earliest eligible reported run per change; no selection by ranking score.'})
     result = {'schema_version': 1, 'groups': output,
               'limitations': ['Selected local cases are not a representative benchmark.',
-                              'Different evaluator configurations and repositories are separated.',
+                              'Different evaluator configurations, index hashes, and repositories are separated.',
                               'Historical-order comparisons use only cases with verified comparable orders.',
                               'p90 is omitted for fewer than ten eligible cases.']}
     lines = ['# Faultline saved evaluation summary', '', 'Offline summary; no API calls.', '']
     for group in output:
         lines += [f"## {md(group['repository'])} — {md(group['evaluator']['model'])}", '',
+                  f"Index: {group['index_hash'][:12]}.", '',
                   f"Distinct PRs/MRs: {group['distinct_changes']}; eligible: {group['eligible_changes']}; excluded: {group['excluded_changes']}.", '',
                   'Single-case evidence only.' if group['distinct_changes'] == 1 else 'Exploratory sample; review selection bias before drawing general conclusions.', '',
                   '| Method | Cases | Hit @1 | Hit @5 | Hit @10 | Median rank | p90 rank | Worst rank |',

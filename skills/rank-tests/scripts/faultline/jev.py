@@ -40,7 +40,7 @@ def validate_answer(response, expected_model):
     try:
         answer = response["answers"]["relevance"]
         probabilities = answer["probabilities"]
-        if answer["type"] != "choice" or set(probabilities) != set(LEVELS):
+        if answer["type"] != "choice" or not isinstance(probabilities, dict) or set(probabilities) != set(LEVELS):
             raise ValueError()
         if any(isinstance(p, bool) or not isinstance(p, (int, float)) or not math.isfinite(p) or not 0 <= p <= 1 for p in probabilities.values()):
             raise ValueError()
@@ -95,7 +95,7 @@ def rank_snapshot(store, repository, context, profiles, config, evaluator, *, dr
             checked = validate_answer({"model": saved.get("model"), "usage": saved.get("usage"),
                        "answers": {"relevance": {"type": "choice", "choice": saved.get("choice"),
                        "probabilities": saved.get("probabilities"), "confidence": saved.get("confidence")}}}, config["model"])
-            if saved.get("profile_hash") != digest(profile) or not math.isclose(saved.get("score", -1), checked["score"], abs_tol=1e-9):
+            if saved.get("profile_hash") != digest(profile) or not isinstance(saved.get("score"), (int, float)) or not math.isclose(saved["score"], checked["score"], abs_tol=1e-9):
                 raise FaultlineError("Invalid cached prediction; inspect the pair cache instead of editing scores")
             rows.append({**saved, "id": profile["id"]})
         else:

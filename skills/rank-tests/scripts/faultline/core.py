@@ -29,11 +29,15 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def reject_constant(value):
+    raise ValueError(f"Non-finite JSON number: {value}")
+
+
 def read_json(path: Path, default=None):
     if not path.exists():
         return default
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(), parse_constant=reject_constant)
     except (ValueError, OSError) as exc:
         raise FaultlineError(f"Cannot read JSON: {path}") from exc
 
