@@ -8,10 +8,10 @@ version = "0.1.0"
 description = "Inspectable semantic test ranking and retrospective PR analysis with Jev"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["gherkin-official>=29,<40"]
+dependencies = []
 
 [project.scripts]
 faultline = "faultline.cli:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["skills/rank-tests/scripts"]

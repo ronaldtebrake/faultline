@@ -1,52 +1,65 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from faultline.core import DEFAULTS, FaultlineError, Store, write_json
-from faultline.index import build_index
-
-FEATURE = '''Feature: Access
-  Background:
-    Given a private document
-  Scenario: Anonymous visitor
-    When a visitor opens it
-    Then access is denied
-  Scenario Outline: Membership
-    Given a <role> user
-    Then access is <result>
-    Examples:
-      | role | result |
-      | member | allowed |
-      | guest | denied |
-'''
+from faultline.core import FaultlineError, Store
+from faultline.index import build_index, index_status, load_profiles
 
 
 class IndexTests(unittest.TestCase):
-    def test_outline_background_and_incremental_updates(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            (root / 'access.feature').write_text(FEATURE)
-            store = Store(root)
-            first = build_index(store, DEFAULTS)
-            self.assertEqual(3, len(first['tests']))
-            self.assertTrue(all('private document' in t['description'] for t in first['tests']))
-            self.assertEqual(3, build_index(store, DEFAULTS)['statistics']['unchanged'])
-            (root / 'access.feature').write_text('\n' + FEATURE)
-            moved = build_index(store, DEFAULTS)
-            self.assertEqual([p['id'] for p in first['tests']], [p['id'] for p in moved['tests']])
-            (root / 'access.feature').unlink()
-            self.assertEqual(3, build_index(store, DEFAULTS)['statistics']['removed'])
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.store = Store(self.root)
+        (self.root / 'test.php').write_text('test first; test second;')
+        (self.root / 'helper.php').write_text('fixture v1')
+        self.draft = self.root / 'draft.jsonl'
 
-    def test_import_and_duplicates(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            test = {'id': 'a', 'source': 'tests/a', 'description': 'protects access'}
-            write_json(root / 'profiles.json', [test, test])
-            with self.assertRaises(FaultlineError):
-                build_index(Store(root), {**DEFAULTS, 'profiles_file': 'profiles.json'})
+    def write_draft(self, profiles):
+        self.draft.write_text('\n'.join(json.dumps(p) for p in profiles))
 
-    def test_disabled_tag(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            (root / 'test.feature').write_text('@disabled\n' + FEATURE)
-            self.assertEqual([], build_index(Store(root), DEFAULTS)['tests'])
+    def profiles(self):
+        return [{'id': 'test::first', 'source': 'test.php', 'description': 'First behavior', 'context_sources': ['helper.php']},
+                {'id': 'test::second', 'source': 'test.php', 'description': 'Second behavior'}]
+
+    def test_incremental_preservation_addition_and_removal(self):
+        self.write_draft(self.profiles())
+        self.assertEqual(2, build_index(self.store, self.draft, 'test')['added'])
+        updated = self.profiles()
+        updated[0]['description'] = 'Improvised replacement'
+        self.write_draft(updated)
+        self.assertEqual(2, build_index(self.store, self.draft, 'test')['unchanged'])
+        self.assertEqual('First behavior', load_profiles(self.store.path / 'index.jsonl')[0]['description'])
+        build_index(self.store, self.draft, 'test', rewrite=True)
+        self.assertEqual('Improvised replacement', load_profiles(self.store.path / 'index.jsonl')[0]['description'])
+        self.write_draft(updated[:1])
+        self.assertEqual(1, build_index(self.store, self.draft, 'test')['removed'])
+
+    def test_helper_change_invalidates_only_dependent_profiles(self):
+        self.write_draft(self.profiles())
+        build_index(self.store, self.draft, 'test')
+        (self.root / 'helper.php').write_text('fixture v2')
+        status = index_status(self.store)
+        self.assertEqual(['test::first'], status['changed'])
+        self.assertEqual(['test::second'], status['unchanged'])
+        self.assertEqual(1, build_index(self.store, self.draft, 'test')['changed'])
+
+    def test_stale_hash_rejected_without_modifying_index(self):
+        self.write_draft(self.profiles())
+        build_index(self.store, self.draft, 'test')
+        previous = (self.store.path / 'index.jsonl').read_text()
+        self.draft.write_text(previous)
+        (self.root / 'test.php').write_text('changed')
+        with self.assertRaises(FaultlineError):
+            build_index(self.store, self.draft, 'test')
+        self.assertEqual(previous, (self.store.path / 'index.jsonl').read_text())
+
+    def test_duplicate_ids_and_external_paths_rejected(self):
+        self.write_draft([self.profiles()[0]] * 2)
+        with self.assertRaises(FaultlineError):
+            build_index(self.store, self.draft, 'test')
+        self.write_draft([{'id': 'a', 'source': '../outside.php', 'description': 'Unsafe source'}])
+        with self.assertRaises(FaultlineError):
+            build_index(self.store, self.draft, 'test')
