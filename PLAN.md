@@ -30,7 +30,7 @@ Implemented:
 - Probability validation, expected relevance scoring with values 0–4, and deterministic test-ID tie-breaking. The agent never modifies scores or order.
 - `rank` / `jev-evaluate` accept structured change/catalog files, expose a network-free dry run, cache each test judgment, and save full probabilities plus a readable ranking. Cache identity includes relevant change input, snapshot, profile, question/schema, and model configuration.
 - Complete predictions are frozen with an integrity hash and full source inputs. Partial attempts remain inspectable and resume from completed pair predictions. Integrity checks detect accidental edits, not dishonest agent attestations.
-- Jev transport uses serial paced calls, an explicit request ceiling including retries, bounded backoff for rate limiting/overload, persisted cooldowns, and no automatic retry of ambiguous connection failures. Oversized context is rejected rather than silently truncated. Credentials are environment-only.
+- Jev transport uses serial paced calls, an explicit request ceiling including retries, bounded backoff for rate limiting/overload, persisted cooldowns, and no automatic retry of ambiguous connection failures. Oversized context is rejected rather than silently truncated. Credentials come from the environment or local `.env` files, are loaded only for live evaluation, and never enter saved evidence.
 
 Acceptance: inspect rankings for several real changes; verify unrelated tests score low and relevant cross-behavior tests appear high. Live service access and ranking quality remain unverified. Offline tests exercise the HTTP contract, invalid probabilities, interruption/reuse, request limits, model versions, and credential-safe errors.
 

@@ -60,6 +60,6 @@ The initial release ranks and reports. It does not run tests, skip tests, trigge
 
 ## Local data and external evaluation
 
-Catalogs, cached predictions, and reports stay under the target repository's ignored `.faultline/` directory. Selected change text and test descriptions are sent to Jev using `TYPESAFE_API_KEY`. Requests are paced, bounded, cached, and resumable. Repository history collection uses the agent's existing authenticated tools.
+Catalogs, cached predictions, and reports stay under the target repository's ignored `.faultline/` directory. Selected change text and test descriptions are sent to Jev using `TYPESAFE_API_KEY`, configured in the environment or a local `.faultline/.env` file ([setup](docs/install.md#configure-the-jev-api-key)). Requests are paced, bounded, cached, and resumable. Repository history collection uses the agent's existing authenticated tools.
 
 The implementation and remaining validation work are tracked in [PLAN.md](PLAN.md). Installation, usage, and testing instructions are in [the setup guide](docs/install.md).

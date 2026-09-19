@@ -8,7 +8,23 @@ Faultline bundles one Agent Skill and its evaluation scripts. Install it with th
 - Python 3.10+ to run the bundled evaluator, with no third-party Python runtime packages.
 - Node.js/npm when using `npx skills`; native plugin installation does not require npm.
 - Existing Git credentials for this private repository, and authenticated hosting tools for PR/MR analysis.
-- `TYPESAFE_API_KEY` in the agent's shell environment for live ranking. Indexing, dry runs, and saved reports work without it. Selected change text and test descriptions are sent to TypeSafe.
+- `TYPESAFE_API_KEY` configured below for live ranking. Indexing, dry runs, and saved reports work without it. Selected change text and test descriptions are sent to TypeSafe.
+
+## Configure the Jev API key
+
+Before the first live ranking, ask Faultline to initialize or index the repository. Then create `.faultline/.env` **in the repository you want to analyze**, using your IDE:
+
+```dotenv
+TYPESAFE_API_KEY="your-key"
+```
+
+Faultline initialization creates `.faultline/.gitignore` with an ignore-all rule, keeping this local credential file out of ordinary Git commits. Do not put a real key in the installed skill, prompts, or `config.json`.
+
+The evaluator reads the file automatically when a live request is needed, including when your agent runs in an IDE. No terminal export or agent restart is required for file-based setup. Installation, indexing, dry runs, cached rankings, and saved reports do not require the key.
+
+Lookup order is a nonempty process environment variable, then `.faultline/.env`, then the analyzed repository's root `.env`. If you already use a root `.env`, add the key there and ensure that file is ignored by Git. Paths are resolved from the analyzed repository, never from the plugin's installation directory or unrelated working directory.
+
+Only `TYPESAFE_API_KEY` is read; other entries are ignored. Single-line plain or quoted values, optional `export`, and trailing comments are supported. Values are literal: no variable interpolation, shell execution, multiline strings, or escape processing. The key is not written to caches or reports.
 
 ## Skills CLI
 

@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import math
-import os
 
 from .core import FaultlineError, Store, digest, now, read_json, write_json
 from .network import Budget, HTTP
+from .credentials import api_key
 
 LEVELS = {
     "irrelevant": "The protected behavior is unrelated to the changed behavior.",
@@ -76,9 +76,7 @@ class JevEvaluator:
         if len(json.dumps(state, ensure_ascii=False).encode()) > self.config["max_state_bytes"]:
             raise FaultlineError("Change/test context exceeds max_state_bytes; no silent diff truncation. Narrow the change or review the configured bound.")
         if self.http is None:
-            token = os.environ.get("TYPESAFE_API_KEY")
-            if not token:
-                raise FaultlineError("Set TYPESAFE_API_KEY to enable Jev evaluation.")
+            token = api_key(self.store)
             self.http = HTTP(self.store.path / "http", "jev", self.config, token, self.budget)
         response, _ = self.http.request(ENDPOINT, payload={"model": self.model, "state": state,
                      "questions": {"relevance": QUESTION}}, cached=False, accept="application/json")

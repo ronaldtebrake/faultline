@@ -82,4 +82,4 @@ Output:
   http/jev/cooldown.json
 ```
 
-The API key is read from `TYPESAFE_API_KEY` and is never logged or cached. No live inference is needed to run the test suite.
+The API key is read from nonempty `TYPESAFE_API_KEY` in the environment, then `.faultline/.env`, then root `.env` of the analyzed repository. Files are read lazily for live requests; only that key is parsed, without interpolation or execution. The key is never logged or cached. Prefer `.faultline/.env` after initialization, which creates the local ignore rule. No live inference is needed to run the test suite.
