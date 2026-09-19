@@ -27,7 +27,14 @@ def validate(store, path):
     return selection, config
 
 
-def run_suite(store, selection_path, suite_key, *, prerequisites=(), output=None, junit_output=None):
+def run_suite(store, selection_path, suite_key, *, prerequisites=(), output=None, junit_output=None, execute=False):
+    if not execute:
+        selection = checked(Path(selection_path), 'selection')
+        matching = [s for s in selection['suites'] if s['key'] == suite_key or s['suite'] == suite_key]
+        if len(matching) != 1:
+            raise FaultlineError('Choose an exact suite:variant from the selection')
+        from .proposals import report_selection
+        return {**report_selection(store, selection), 'suite_key': matching[0]['key'], 'exit_code': 0}
     selection, config = validate(store, selection_path)
     available = {key: (suite, variant) for suite, variant, key in variants(config)}
     if suite_key not in available:
@@ -47,7 +54,7 @@ def run_suite(store, selection_path, suite_key, *, prerequisites=(), output=None
     if required - supplied:
         raise FaultlineError('Missing successful prerequisite receipts: ' + ', '.join(sorted(required - supplied)))
     frozen = next((s for s in selection['suites'] if s['key'] == suite_key), None)
-    if not frozen or frozen.get('execution') != 'full':
+    if not frozen or frozen.get('execution') != 'none':
         raise FaultlineError('Unsupported execution plan; select again')
     # Resolve only this requested suite, after checking its prerequisites. Native
     # discovery can bootstrap the application and belongs in the execution environment.
@@ -95,7 +102,7 @@ def run_suite(store, selection_path, suite_key, *, prerequisites=(), output=None
     except KeyboardInterrupt:
         code, status = 130, 'interrupted'
     receipt = seal({'schema_version': 2, 'kind': 'execution', 'selection_id': selection['integrity'],
-                    'head': selection['change']['head'], 'suite_key': suite_key, 'mode': 'full_shadow',
+                    'head': selection['change']['head'], 'suite_key': suite_key, 'mode': 'full_evaluation',
                     'started_at': started, 'completed_at': now(), 'duration_seconds': time.monotonic() - wall,
                     'status': status, 'exit_code': code,
                     'native_inventory': native, 'validation_seconds': validation_seconds, 'proposal_validated': not validation_reasons,

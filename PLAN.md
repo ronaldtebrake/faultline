@@ -23,14 +23,15 @@ flowchart TD
     STORE["Trusted CI cache artifacts"] --> SELECT
     STORE --> GRAPH
     SELECT --> FROZEN["Frozen selection.json"]
-    FROZEN --> RUN["run: validate requested runner, then full suite"]
-    RUN --> RUNNERS["PHPUnit / Behat; Playwright next"]
-    RUNNERS --> REPORT["record + shadow-report: outcomes, misses, time, costs"]
+    FROZEN --> REPORT["Shadow report: would run / would omit; no tests"]
+    FROZEN -.-> RUN["Explicit run --execute only"]
+    RUN --> RUNNERS["Validate runner + full-suite evaluation"]
+    RUNNERS --> OBSERVED["record + execution-report: observed outcomes"]
     REPORT --> STORE
     REPORT --> DEV
 ```
 
-`graph build/inspect`, `discover`, `catalog`, `select`, `run`, `record`, `shadow-report`, and optional `mapping import-phpunit` are implemented for full-suite shadow use. Existing CI artifact tooling transports immutable graph and Jev caches; producer authentication remains a CI responsibility. Existing `rank`, `evaluate`, and `report` retain their legacy ranking contracts.
+`graph build/inspect`, `discover`, `catalog`, `select`, `run`, `record`, `shadow-report`, and optional `mapping import-phpunit` are implemented with report-only shadow defaults. `select` saves proposal reports immediately; `shadow-report` tracks PR snapshots. `run --execute`, `record`, and `execution-report` are separate opt-in execution/evaluation commands. Existing CI artifact tooling transports immutable graph and Jev caches; producer authentication remains a CI responsibility. Existing `rank`, `evaluate`, and `report` retain their legacy ranking contracts.
 
 Git/hosting tooling supplies cumulative PR/MR changes, tested revisions, and outcome artifacts. CI retains containers, services, isolation, matrices, and scheduling. Faultline does not replace hosting platforms or the CI scheduler.
 
@@ -49,9 +50,9 @@ Validation completed: offline reuse, freshness, incomplete discovery, migration,
 
 Remaining acceptance: validate a complete real suite inventory and reviewed descriptions at the chosen PR revision, verify native IDs against actual execution/results, bound discovery/indexing effort, and qualify remote-process coverage before using it. Extend the verified runner-version range through conformance fixtures. Behat HTTP coverage requires evidence from the application-serving process; local CLI coverage is insufficient. See [the command and data contracts](skills/faultline/references/shared-catalog.md).
 
-## Stage 2 — CodeGraph selection engine and shadow execution
+## Stage 2 — CodeGraph selection engine and shadow reporting
 
-Implemented shadow path: exact Git source export into isolated snapshots; pinned producer/schema validation; portable closed SQLite artifacts; compatible incremental reuse; base/head reverse dependency evidence; source-gap and traversal-limit fallbacks; graph-context Jev batching and immutable answer caches; full execution receipts; JUnit/generic outcome recording; per-case and aggregate reports.
+Implemented shadow path: exact Git source export into isolated snapshots; pinned producer/schema validation; portable closed SQLite artifacts; compatible incremental reuse; base/head reverse dependency evidence; source-gap and traversal-limit fallbacks; graph-context Jev batching and immutable answer caches; automatic would-run reports and PR snapshot tracking without execution; separately opted-in execution receipts and JUnit/generic outcome recording.
 
 Validated with offline contract tests and the actual CodeGraph 1.6.0 executable on synthetic PHP dependencies. Live Jev evaluation and real CI recall remain unverified. See [the working workflow](skills/faultline/references/graph-workflow.md).
 
@@ -62,7 +63,7 @@ The requirements below span the implemented shadow path and future selective exe
 - Expose `select`, `run --selection … --suite …`, and `record`. Reject revision/configuration/catalog mismatches before execution. Validate native identities only for the requested suite at execution; inventory disagreement or failure requires full execution and an incomplete assessment. Preserve runner exit status. Never interpret missing, empty, invalid, or interrupted decisions as permission to run zero tests.
 - Mandatory execution includes changed/new tests, must-run rules, positive dependency/coverage matches, relevant setup changes, unresolved failures, and uncertain units. Missing relationships are not negative evidence. Bound unknown changes by explicit scope; unbounded unknowns execute every suite.
 - Use native filtering at file/class granularity, including all associated datasets, scenarios, and variants. Validate exact selectors against discovery; unsupported filters or unresolved prerequisites widen execution. CI supplies services, containers, and scheduling.
-- Default to shadow mode: freeze the proposal, then run everything. Reviewed experimental opt-in may omit only complete/current units with `P(irrelevant) >= 0.95`. This is an experimental threshold, not a calibrated safety guarantee.
+- Default to shadow mode: freeze the proposal and save would-run reports; do not execute tests or change CI. Full-suite evaluation requires an explicit execution request and `run --execute`. Reviewed experimental opt-in may omit only complete/current units with `P(irrelevant) >= 0.95`. This is an experimental threshold, not a calibrated safety guarantee.
 - On missing credentials, Jev errors, invalid responses/selectors, insufficient evidence, expired/unavailable trusted state, or exhausted budgets, execute the affected suite fully and record why.
 - Retain the five-level evaluator (`irrelevant`, `weak`, `plausible`, `strong`, `direct`), probabilities, expected 0–4 score, deterministic identity tie-breaks, and pinned model/evaluator versions. Benchmark evaluator changes separately.
 - The official multi-question HTTP contract is verified; validate live model behavior and batch several judgments against shared change context. Bound batch bytes/units, requests including retries, and elapsed time; validate each answer independently. Keep existing serial pacing, bounded retry/backoff, interruption recovery, and credential-safe errors.
@@ -76,10 +77,10 @@ The requirements below span the implemented shadow path and future selective exe
 
 Next validation: run the complete graph-backed workflow on a representative PR/MR, using its actual diff base and tested head. Audit graph relationships against native inventory, including custom PHP extensions, YAML service wiring, Gherkin steps, and remote boundaries. Keep outcomes hidden until proposals are frozen. Validate Linux artifact reuse, indexing resources, and graph-only versus hybrid evidence before considering selective execution.
 
-The implemented reports group retries and suites by compatible change snapshot, retain exact observations, and publish denominators and descriptive uncertainty. Baselines currently compare equal execution-unit counts; equal-runtime budgets, setup/job savings, audit costs, and externally incurred agent costs need further measurement.
+Shadow reports track frozen proposals across PR snapshots and make no outcome-based claims. Separate execution reports group retries and suites by compatible change snapshot, retain exact observations, and publish denominators and descriptive uncertainty. Baselines currently compare equal execution-unit counts; equal-runtime budgets, setup/job savings, audit costs, and externally incurred agent costs need further measurement.
 
 
-- Start with one ordinary PR/MR. Preserve existing full execution; do not scan a hundred PRs or trigger historical reruns by default. Resolve exact tested revisions/attempts with bounded, cached hosting calls.
+- Start with one ordinary PR/MR. Keep existing CI test jobs unchanged; do not scan a hundred PRs or trigger historical reruns by default. Resolve exact tested revisions/attempts with bounded, cached hosting calls.
 - Freeze decisions before outcomes exist. Collect green runs, regressions, flakes, infrastructure failures, and incomplete/expired runs. Passing retries are not automatically flakes; CI downtime is not a product regression.
 - Use the existing test runner's result/coverage producers. Qualify coverage-driver overhead and remote application attribution separately. Importer provenance must include source revision, runner variant, scope, and collection completeness.
 - Match outcome identities exactly. A known failure missing from the catalog excludes the corresponding recall claim. Unexecuted tests are unknown, never passing. Current-catalog retrospective cases disclose suite drift; retain each exact catalog snapshot.

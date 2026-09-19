@@ -57,9 +57,9 @@ The key is needed for live Jev judgments. Selected change context, test descript
 
 Ask your agent, replacing `123` with your PR or MR number:
 
-> Use Faultline to analyze PR 123 with CodeGraph and Jev. Limit Jev to 10 HTTP requests. Run the full test suites in shadow mode and save the report.
+> Use Faultline to analyze PR 123 with CodeGraph and Jev. Limit Jev to 10 HTTP requests. Save a shadow report showing which tests Faultline would run or omit. Do not execute tests or change CI.
 
-Your agent needs access to the PR/MR through your existing hosting tools. Faultline currently runs full suites and reports which tests it would have selected.
+Your agent needs access to the PR/MR through your existing hosting tools. Faultline saves the would-run report without executing tests. Use `faultline shadow-report` to summarize saved PR snapshots; keep your existing CI test jobs unchanged.
 
 See the [workflow guide](../skills/faultline/references/graph-workflow.md) for configuration and command details.
 

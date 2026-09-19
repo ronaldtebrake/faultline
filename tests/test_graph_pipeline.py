@@ -112,6 +112,64 @@ class GraphPipelineTests(unittest.TestCase):
         return select(self.store, self.base, evaluator=evaluator or Evaluator(), build_graphs=False, **kw)
 
 
+    def test_shadow_selection_saves_would_run_report_without_execution(self):
+        with patch('faultline.tia.runners.invoke', side_effect=AssertionError('No native discovery')):
+            result = self.selection(identifier='PR-123', output=self.store.path / 'custom.json')
+        report_path = Path(result['report']['json'])
+        value = json.loads(report_path.read_text())
+        self.assertEqual('PR-123', value['change']['id'])
+        self.assertEqual('none', value['execution'])
+        self.assertEqual(0, value['metrics']['tests_executed_by_faultline'])
+        self.assertEqual(1, value['metrics']['would_run'])
+        self.assertEqual(1, value['metrics']['would_omit'])
+        self.assertIsNone(value['metrics']['regression_recall'])
+        self.assertIsNone(value['metrics']['measured_execution_savings_seconds'])
+        self.assertTrue(Path(result['report']['markdown']).is_file())
+        self.assertFalse((self.store.path / 'runs').exists())
+        self.assertTrue((self.store.path / 'selections' / result['selection_id'] / 'selection.json').is_file())
+
+    def test_run_defaults_to_offline_preview_even_with_unavailable_runtime(self):
+        result = self.selection()
+        # Previewing old proposals does not require the original checkout/runtime.
+        (self.root / 'runner.py').unlink()
+        with patch('subprocess.run', side_effect=AssertionError('No process in shadow preview')):
+            preview = run_suite(self.store, result['path'], 'unit')
+            self.assertEqual('none', preview['execution'])
+            self.assertEqual(0, preview['exit_code'])
+            with patch('builtins.print'), patch('faultline.cli.repo_root', return_value=self.root):
+                self.assertEqual(0, main(['--root', str(self.root), 'run', '--selection', result['path'], '--suite', 'unit']))
+                self.assertEqual(0, main(['--root', str(self.root), 'shadow-report', '--selection', result['path']]))
+                self.assertEqual(0, main(['--root', str(self.root), 'shadow-report']))
+        self.assertFalse((self.store.path / 'runs').exists())
+
+    def test_shadow_summary_deduplicates_reanalysis_and_keeps_revision_snapshots(self):
+        from faultline.tia.proposals import aggregate
+        first = self.selection(identifier='PR-123')
+        second = self.selection(identifier='PR-123')
+        summary = aggregate(self.store)
+        self.assertEqual(2, summary['analyses'])
+        self.assertEqual(1, summary['snapshots'])
+        self.assertEqual(second['selection_id'], summary['cases'][0]['selection_id'])
+        (self.root / 'src/Policy.php').write_text('<?php class Policy { function allows() { return null; } }')
+        self.commit()
+        self.selection(identifier='PR-123')
+        with patch('subprocess.run', side_effect=AssertionError('Aggregation must be offline')):
+            summary = aggregate(self.store)
+        self.assertEqual(2, summary['snapshots'])
+        self.assertEqual(3, summary['analyses'])
+        self.assertEqual(2, len({c['change']['head'] for c in summary['cases']}))
+
+    def test_shadow_report_exposes_full_fallback_without_inventing_savings(self):
+        from faultline.tia.proposals import aggregate
+        (self.artifacts[0] / 'graph.sqlite').write_bytes(b'corrupt')
+        result = self.selection()
+        value = json.loads(Path(result['report']['json']).read_text())
+        self.assertEqual(0, value['metrics']['would_omit'])
+        self.assertTrue(value['suites'][0]['would_run_full_suite'])
+        self.assertTrue(value['suites'][0]['fallbacks'])
+        self.assertIsNone(value['metrics']['measured_execution_savings_seconds'])
+        self.assertEqual('none', aggregate(self.store)['execution'])
+
     def test_analysis_and_catalog_commands_never_invoke_runners(self):
         with patch('faultline.tia.runners.invoke', side_effect=AssertionError('Application must stay offline')):
             result = self.selection()
@@ -135,7 +193,7 @@ class GraphPipelineTests(unittest.TestCase):
             self.assertTrue(inventory['complete'])
             self.assertEqual(2, len(inventory['suites'][0]['units']))
             result = self.selection()
-        self.assertEqual('full_shadow', result['execution'])
+        self.assertEqual('none', result['execution'])
 
     def test_native_enrichment_is_explicit_and_failure_keeps_source_analysis(self):
         result = self.selection(native=True)
@@ -158,7 +216,7 @@ class GraphPipelineTests(unittest.TestCase):
         result = self.selection()
         from faultline.tia.runners import discover_suite
         with patch('faultline.tia.execution.discover_suite', wraps=discover_suite) as discover:
-            receipt = run_suite(self.store, result['path'], 'unit')
+            receipt = run_suite(self.store, result['path'], 'unit', execute=True)
         self.assertEqual(1, discover.call_count)
         self.assertEqual('unit', discover.call_args.args[1]['id'])
         self.assertTrue(receipt['proposal_validated'])
@@ -167,11 +225,11 @@ class GraphPipelineTests(unittest.TestCase):
     def test_discovery_failure_during_execution_runs_full_and_reports_incomplete(self):
         result = self.selection()
         with patch('faultline.tia.runners.invoke', side_effect=FaultlineError('Environment unavailable')):
-            receipt = run_suite(self.store, result['path'], 'unit')
+            receipt = run_suite(self.store, result['path'], 'unit', execute=True)
         self.assertEqual(7, receipt['exit_code'])
         self.assertFalse(receipt['proposal_validated'])
         self.assertIn('native_discovery_incomplete', receipt['validation_fallbacks'])
-        self.assertEqual('full_shadow', receipt['mode'])
+        self.assertEqual('full_evaluation', receipt['mode'])
         report_result = record(self.store, result['path'], receipt['path'], self.store.path / 'missing.xml', format='junit')
         self.assertFalse(report_result['metrics']['outcomes_complete'])
         self.assertIsNone(report_result['metrics']['potential_serial_test_seconds_avoided'])
@@ -182,7 +240,7 @@ class GraphPipelineTests(unittest.TestCase):
         native = discover_suite(self.root, self.config['suites'][0], self.config['suites'][0]['variants'][0])
         native['units'] = native['units'][:1]
         with patch('faultline.tia.execution.discover_suite', return_value=native):
-            receipt = run_suite(self.store, result['path'], 'unit')
+            receipt = run_suite(self.store, result['path'], 'unit', execute=True)
         self.assertIn('source_targets_differ_from_native_inventory', receipt['validation_fallbacks'])
         self.assertFalse(receipt['proposal_validated'])
         self.assertEqual(['unit:default:tests/BTest.php'], checked(Path(result['path']))['suites'][0]['proposed_omitted'])
@@ -193,7 +251,7 @@ class GraphPipelineTests(unittest.TestCase):
         native = discover_suite(self.root, self.config['suites'][0], self.config['suites'][0]['variants'][0])
         native['units'][0]['requires_full_suite'] = True
         with patch('faultline.tia.execution.discover_suite', return_value=native):
-            receipt = run_suite(self.store, result['path'], 'unit')
+            receipt = run_suite(self.store, result['path'], 'unit', execute=True)
         self.assertFalse(receipt['proposal_validated'])
         self.assertIn('native_dependencies_require_full_suite', receipt['validation_fallbacks'])
         self.assertEqual(7, receipt['exit_code'])
@@ -205,7 +263,7 @@ class GraphPipelineTests(unittest.TestCase):
         self.commit()
         with patch('faultline.tia.runners.invoke', side_effect=AssertionError('Checks have no test enumeration')):
             result = self.selection()
-            receipt = run_suite(self.store, result['path'], 'static')
+            receipt = run_suite(self.store, result['path'], 'static', execute=True)
         self.assertEqual(1, result['proposed_selected'])
         self.assertEqual(0, result['proposed_omitted'])
         self.assertEqual(7, receipt['exit_code'])
@@ -230,7 +288,7 @@ class GraphPipelineTests(unittest.TestCase):
         suite = value['suites'][0]
         self.assertEqual(['unit:default:tests/ATest.php'], suite['proposed_selected'])
         self.assertEqual(['unit:default:tests/BTest.php'], suite['proposed_omitted'])
-        self.assertEqual('full', suite['execution'])
+        self.assertEqual('none', suite['execution'])
         self.assertIn('positive_code_graph_match', suite['reasons'][suite['proposed_selected'][0]])
         self.assertEqual(2, len(evaluator.profiles))
         self.assertEqual(2, len(evaluator.profiles[0]['graph_evidence']['change_paths'][0]['edges']))
@@ -269,17 +327,17 @@ class GraphPipelineTests(unittest.TestCase):
             result = select(self.store, self.base, build_graphs=False)
         self.assertEqual(0, result['proposed_omitted'])
         self.assertIn('semantic_evaluation_incomplete', result['fallbacks']['unit:default'])
-        receipt = run_suite(self.store, result['path'], 'unit')
+        receipt = run_suite(self.store, result['path'], 'unit', execute=True)
         self.assertEqual(7, receipt['exit_code'])
-        self.assertEqual('full_shadow', receipt['mode'])
+        self.assertEqual('full_evaluation', receipt['mode'])
         with patch('builtins.print'):
-            self.assertEqual(7, main(['--root', str(self.root), 'run', '--selection', result['path'], '--suite', 'unit']))
+            self.assertEqual(7, main(['--root', str(self.root), 'run', '--execute', '--selection', result['path'], '--suite', 'unit']))
 
     def test_stale_selection_rejected_before_runner(self):
         result = self.selection()
         (self.root / 'src/Policy.php').write_text('changed after selection')
         with self.assertRaisesRegex(FaultlineError, 'Checkout differs'):
-            run_suite(self.store, result['path'], 'unit')
+            run_suite(self.store, result['path'], 'unit', execute=True)
 
     def outcomes(self, selection, complete=True):
         rows = [{'id': 'unit:default:tests/ATest.php', 'member': 'ATest::testA', 'status': 'passed', 'duration_seconds': 3},
@@ -292,7 +350,7 @@ class GraphPipelineTests(unittest.TestCase):
         path = self.store.path / 'outcomes.json'
         write_json(path, self.outcomes(selection))
         for _ in range(2):
-            receipt = run_suite(self.store, selection['path'], 'unit')
+            receipt = run_suite(self.store, selection['path'], 'unit', execute=True)
             result = record(self.store, selection['path'], receipt['path'], path)
             self.assertEqual(0, result['metrics']['failing_change_recall'])
             self.assertEqual(0, result['metrics']['failing_test_recall'])
@@ -306,7 +364,7 @@ class GraphPipelineTests(unittest.TestCase):
 
     def test_missing_members_never_pass_and_duplicate_results_rejected(self):
         selection = self.selection()
-        receipt = run_suite(self.store, selection['path'], 'unit')
+        receipt = run_suite(self.store, selection['path'], 'unit', execute=True)
         path = self.store.path / 'outcomes.json'
         data = self.outcomes(selection)
         data['tests'] = data['tests'][1:]
@@ -330,7 +388,7 @@ class GraphPipelineTests(unittest.TestCase):
 
     def test_classification_revision_preserves_raw_evidence_without_another_run(self):
         selection = self.selection()
-        receipt = run_suite(self.store, selection['path'], 'unit')
+        receipt = run_suite(self.store, selection['path'], 'unit', execute=True)
         path = self.store.path / 'classified.json'
         data = self.outcomes(selection)
         write_json(path, data)
@@ -361,11 +419,11 @@ class GraphPipelineTests(unittest.TestCase):
 
     def test_missing_junit_produces_incomplete_report_and_native_members_import_exactly(self):
         selection = self.selection()
-        receipt = run_suite(self.store, selection['path'], 'unit')
+        receipt = run_suite(self.store, selection['path'], 'unit', execute=True)
         missing = record(self.store, selection['path'], receipt['path'], self.store.path / 'absent.xml', format='junit')
         self.assertFalse(missing['metrics']['outcomes_complete'])
         self.assertEqual(0, missing['metrics']['observed_members'])
-        receipt = run_suite(self.store, selection['path'], 'unit')
+        receipt = run_suite(self.store, selection['path'], 'unit', execute=True)
         path = self.store.path / 'native.xml'
         path.write_text('<testsuites><testsuite><testcase classname="ATest" name="testA" time="3"/><testcase classname="BTest" name="testB" time="5"><failure/></testcase></testsuite></testsuites>')
         native = record(self.store, selection['path'], receipt['path'], path, format='junit')
@@ -381,7 +439,7 @@ class GraphPipelineTests(unittest.TestCase):
         self.head = self.git('rev-parse', 'HEAD').strip()
         self.publish(self.head)
         selection = self.selection()
-        receipts = [run_suite(self.store, selection['path'], name) for name in ['unit', 'other']]
+        receipts = [run_suite(self.store, selection['path'], name, execute=True) for name in ['unit', 'other']]
         for i, receipt in enumerate(receipts):
             data = self.outcomes(selection)
             prefix = ['unit', 'other'][i]
@@ -406,9 +464,9 @@ class GraphPipelineTests(unittest.TestCase):
         self.publish(self.head)
         selection = self.selection()
         with self.assertRaisesRegex(FaultlineError, 'prerequisite'):
-            run_suite(self.store, selection['path'], 'other')
-        first = run_suite(self.store, selection['path'], 'unit')
-        second = run_suite(self.store, selection['path'], 'other', prerequisites=[first['path']])
+            run_suite(self.store, selection['path'], 'other', execute=True)
+        first = run_suite(self.store, selection['path'], 'unit', execute=True)
+        second = run_suite(self.store, selection['path'], 'other', prerequisites=[first['path']], execute=True)
         self.assertEqual(0, second['exit_code'])
 
     @unittest.skipUnless(os.environ.get('FAULTLINE_CODEGRAPH'), 'Set FAULTLINE_CODEGRAPH to the pinned executable for real producer conformance')

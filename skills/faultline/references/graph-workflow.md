@@ -1,6 +1,6 @@
 # CodeGraph and Jev shadow workflow
 
-Faultline uses CodeGraph 1.6.0 for source parsing and relationships. Python owns source targets, execution-time native identities, provenance, Jev evaluation, frozen decisions, execution validation, and reports. Only full-suite shadow execution is enabled: proposed omissions are measured, never applied to the runner command.
+Faultline uses CodeGraph 1.6.0 for source parsing and relationships. Python owns source targets, execution-time native identities, provenance, Jev evaluation, frozen decisions, execution validation, and reports. Shadow mode is report-only: it saves what Faultline would run or omit, without executing tests or changing CI. Full-suite execution is a separate explicit opt-in; selective execution is not enabled.
 
 ## Install and configure
 
@@ -63,22 +63,37 @@ Jev also scores eligible positive graph matches for inspection, but its answer c
 
 Use `select --dry-run` to inspect restored graph evidence and estimate uncached batches without indexing or contacting Jev. Use `--no-build` to require restored graph artifacts; missing artifacts cause fallbacks. `--base-graph` and `--head-graph` accept explicit artifact directories and validate their revisions, settings, and repository identity.
 
-Native discovery is optional during analysis: add `--native` to `select` or `discover` only in a prepared runtime environment. Failures remain visible under `native_evidence` while source analysis continues. File targets are provisional; exact runtime members are collected at execution.
-
-Run each suite/variant against the frozen selection:
+`select` automatically writes a Markdown and JSON report under `.faultline/reports/proposals/` and retains an immutable proposal under `.faultline/proposals/`. It does not require native test discovery or execution. Even with `--output`, a canonical selection is retained for later inspection.
 
 ```bash
-faultline run --selection .faultline/selection.json --suite unit:default \
+# Regenerate one proposal without re-indexing, inference, or tests:
+faultline shadow-report --selection .faultline/selection.json
+# Track saved PR/MR snapshots without any runner or Jev calls:
+faultline shadow-report
+```
+
+Reports list would-run/would-omit targets, graph/semantic reasons, scores, probabilities, prerequisites, full-suite fallbacks, and analysis cost. The summary uses the latest analysis for each repository/base/head/policy snapshot; repeated analysis does not inflate the snapshot count. Different revisions of one PR remain separate, related snapshots. Copy `.faultline/proposals/` and `.faultline/reports/` into your existing artifact retention if CI jobs are ephemeral. These records can contain private source identities and descriptions; keep them in your project's trusted artifact storage.
+
+Keep the existing CI test jobs unchanged. Proposed omission fractions describe file targets and whole checks; they do not measure saved execution time or regression recall. A fallback means the proposal would run fully if execution were enabled, not that Faultline starts tests now.
+
+## Optional native enrichment and explicit execution
+
+Native discovery is optional during analysis: add `--native` to `select` or `discover` only in a prepared runtime environment. Failures remain visible under `native_evidence` while source analysis continues. File targets are provisional; exact runtime members are collected at execution.
+
+Only for an explicit request to execute tests, run the requested suite/variant against the frozen selection:
+
+```bash
+faultline run --execute --selection .faultline/selection.json --suite unit:default \
   --junit-output .faultline/phpunit.xml --output .faultline/unit-run.json
 ```
 
-The engine first revalidates the checkout, configuration, source inventory, and catalog. It then invokes native discovery only for the requested suite/variant, after checking prerequisites, before running the normal full-suite command, and includes that inventory in the execution receipt. If discovery fails or native files differ from the proposal, it still runs the complete suite and records validation fallbacks. Such cases cannot claim a complete assessment. Whole checks skip test enumeration. It preserves the runner's exit code, streams its output to stderr, and writes an immutable execution receipt even when tests fail. The CLI's stdout remains JSON. PHPUnit JUnit capture uses a file; Behat capture uses a directory. Use fresh output paths for every attempt. An existing result path is refused so stale XML cannot be mistaken for the new run.
+Without `--execute`, `run` only regenerates the proposal report and never invokes native discovery or runners. With `--execute`, the engine first revalidates the checkout, configuration, source inventory, and catalog. It then invokes native discovery only for the requested suite/variant, after checking prerequisites, before running the normal full-suite command, and includes that inventory in the execution receipt. If discovery fails or native files differ from the proposal, it still runs the complete suite and records validation fallbacks. Such cases cannot claim a complete assessment. Whole checks skip test enumeration. It preserves the runner's exit code, streams its output to stderr, and writes an immutable execution receipt even when tests fail. The CLI's stdout remains JSON. PHPUnit JUnit capture uses a file; Behat capture uses a directory. Use fresh output paths for every attempt. An existing result path is refused so stale XML cannot be mistaken for the new run.
 
 CI owns services, containers, matrix scheduling, and parallelism. For configured prerequisite suites, pass their successful receipts with repeated `--prerequisite <receipt.json>` arguments. Every prerequisite variant must have succeeded for the same selection. Configure result collection as an always-run CI step, so a failed test step still produces a report.
 
 ```bash
 faultline record --selection .faultline/selection.json --run .faultline/unit-run.json
-faultline shadow-report
+faultline execution-report
 ```
 
 `record` automatically imports captured JUnit and saves both JSON and Markdown findings. JUnit failures are initially **unknown**, not automatically regressions. For evidence-based classifications or generic runners, supply `--format json --input <file>` before freezing the observation:
@@ -105,7 +120,7 @@ Every member uses the exact native identity saved in the execution receipt, incl
 
 Suite reports show conditional recall against observed confirmed regressions. Aggregate reports require complete observations for all configured suites and group retries into one change snapshot per compatible policy. Ordinary catalog evolution does not split policy groups; configuration/evaluator changes do. A green case cannot establish recall. Reports include denominators and descriptive Wilson intervals; related changes can still be statistically dependent.
 
-Actual test execution saved in shadow mode is zero. Potential avoided time sums omitted members' durations under a serial-execution assumption and is unavailable for incomplete timing/results. Net estimates charge full selection and runner-validation overhead to the suite; they are not parallel CI wall-clock savings. Coverage, external agent cost, setup/job savings, and audit overhead remain unknown unless measured elsewhere. Frozen random, path, lexical, graph, and Jev baselines use the same proposed unit count; this is not an equal-runtime-budget comparison. Unscored units rank conservatively first in the Jev baseline, which is disclosed in the evidence.
+Report-only shadow mode makes no execution savings claim. For an explicitly executed full-suite evaluation, actual test execution avoided is zero. Potential avoided time sums omitted members' durations under a serial-execution assumption and is unavailable for incomplete timing/results. Net estimates charge full selection and runner-validation overhead to the suite; they are not parallel CI wall-clock savings. Coverage, external agent cost, setup/job savings, and audit overhead remain unknown unless measured elsewhere. Frozen random, path, lexical, graph, and Jev baselines use the same proposed unit count; this is not an equal-runtime-budget comparison. Unscored units rank conservatively first in the Jev baseline, which is disclosed in the evidence.
 
 ## Sharing artifacts and controlling cost
 

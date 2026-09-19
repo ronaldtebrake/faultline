@@ -76,7 +76,7 @@ Production-only changes do not invalidate descriptions. Changes to the test file
 
 `discover --native` or `select --native` adds runtime members to matching source targets. This can load application bootstrap code, so use it only in a prepared environment. Source targets remain present even if a runner excludes them or discovery fails. The inventory distinguishes source enumeration (`complete`) from runner evidence (`native_complete` and `native_evidence`). The default inventory has empty `members` arrays; agents must not invent them.
 
-Source globs define the provisional scope and can include helpers or miss generated tests. `run` resolves the requested suite's native inventory and compares file identities before executing. Differences force full execution and make the proposal unvalidated; reports cannot claim complete recall or savings from that case. All current runs are full shadow runs regardless.
+Source globs define the provisional scope and can include helpers or miss generated tests. `run --execute` resolves the requested suite's native inventory and compares file identities before executing. Differences force full execution and make the proposal unvalidated; reports cannot claim complete recall or savings from that case. Shadow mode only writes proposals. Explicit execution runs the full suite.
 
 Represent static analysis, linting, or another indivisible command as a whole check:
 
@@ -89,7 +89,7 @@ Represent static analysis, linting, or another indivisible command as a whole ch
 }
 ```
 
-A whole check always runs in full, needs no source catalog or discovery command, and preserves its process exit status. `record` can report its receipt without per-test results. A failed check is an unclassified failure, not an automatically confirmed regression. Ordinary suites default to `kind: "tests"`.
+A whole check is always proposed in full and only executes with `run --execute`; it needs no source catalog or discovery command, and preserves its process exit status. `record` can report its receipt without per-test results. A failed check is an unclassified failure, not an automatically confirmed regression. Ordinary suites default to `kind: "tests"`.
 
 ## Import existing coverage
 
@@ -128,4 +128,4 @@ Use `runner: "generic"` and an optional `discovery_command` when native discover
 
 Use repository-relative source paths and exact native members, grouped by executable file unit. Do not invent identities with an agent. One invocation covers one suite variant. `{variant}` expands to its ID and an argument equal to `{variant_args}` expands to its configured arguments. Discovery checks local sources, duplicate identities, completeness, and hashes. A generic bridge attests completeness; Faultline cannot infer missing tests from code alone.
 
-The configuration also reserves `scope`, `must_run`, `prerequisites`, `relationships`, `mode`, `irrelevant_threshold`, `selection_command`, evaluator budgets/pricing, and trusted-state age for subsequent engine stages. These fields do not currently enable execution or selection. Use shadow mode while that implementation and validation are pending.
+The configuration also reserves `scope`, `must_run`, `prerequisites`, `relationships`, `mode`, `irrelevant_threshold`, `selection_command`, evaluator budgets/pricing, and trusted-state age for subsequent engine stages. These fields do not currently enable execution or selection. Shadow mode only writes reports. Configuration alone cannot enable execution; `run --execute` is required.

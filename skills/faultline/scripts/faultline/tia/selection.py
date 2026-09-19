@@ -13,7 +13,7 @@ from .common import checked, file_hash, hashes, revision, save_frozen, seal
 from .config import load_config, matches, variants
 from .mapping import covered_units
 
-POLICY = 'codegraph-jev-shadow-v2'
+POLICY = 'codegraph-jev-shadow-v3'
 
 
 def git_output(root, *args):
@@ -111,7 +111,7 @@ def decisions(root, config, inventory, context, description_records, snapshot, g
                                      'graph_evidence': {'change_paths': graph_evidence['paths'].get(u['source'], []),
                                                         'test_dependencies': graph_evidence['dependencies'].get(u['source'], [])}})
         results.append({'key': native['key'], 'suite': native['suite'], 'variant': native['variant'],
-                        'configured_mode': suite['mode'], 'execution': 'full',
+                        'configured_mode': suite['mode'], 'execution': 'none',
                         'kind': suite['kind'], 'native_complete': native['native_complete'],
                         'prerequisites': suite['prerequisites'], 'threshold': suite['irrelevant_threshold'],
                         'reasons': reasons, 'fallbacks': sorted(set(fallbacks)), 'units': native['units']})
@@ -151,7 +151,7 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
     if dry_run:
         return {'dry_run': True, 'change': {k: context[k] for k in ('id', 'base', 'head', 'changed_files')},
                 'candidate_units': len(profiles), 'estimate': result, 'unknown_paths': unknown, 'graph': graph_evidence,
-                'fallbacks': {s['key']: s['fallbacks'] for s in suites}, 'execution': 'full_shadow'}
+                'fallbacks': {s['key']: s['fallbacks'] for s in suites}, 'execution': 'none', 'mode': 'shadow'}
     for suite in suites:
         ids = set(suite['reasons'])
         if ids.intersection(result['errors']):
@@ -172,7 +172,7 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
                 selected.append(id)
         suite['proposed_selected'] = sorted(selected)
         suite['proposed_omitted'] = sorted(omitted)
-        suite['execution_reasons'] = ['shadow_full_execution', 'runner_validation_required_at_execution']
+        suite['execution_reasons'] = ['shadow_report_only', 'execution_requires_explicit_opt_in']
         if suite['configured_mode'] == 'experimental':
             suite['execution_reasons'].append('experimental_execution_not_enabled_in_this_engine_version')
     # Proposals also retain prerequisite suites whenever a dependent proposes work.
@@ -212,7 +212,7 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
     cost = {'input_tokens': tokens, 'pricing': pricing,
             'input_usd_estimate': tokens * pricing['input_usd_per_million'] / 1000000 if tokens is not None and pricing else None,
             'agent_cost': None}
-    document = seal({'schema_version': 2, 'kind': 'selection', 'created_at': now(), 'policy': POLICY,
+    document = seal({'schema_version': 2, 'kind': 'selection', 'mode': 'shadow', 'execution': 'none', 'created_at': now(), 'policy': POLICY,
                      'repository': config['repository'], 'change': context, 'workspace': snapshot,
                      'config_hash': config['config_hash'], 'inventory': inventory,
                      'graph': graph_evidence, 'graph_builds': graph_builds,
@@ -224,15 +224,19 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
                      'selection_seconds': time.monotonic() - started, 'graph_seconds': graph_seconds,
                      'inference_seconds': inference_seconds, 'cost': cost, 'unknown_paths': unknown,
                      'complete': True, 'semantic_complete': result['complete'],
-                     'limitations': ['Shadow proposals are experimental; all suites execute fully.',
+                     'limitations': ['Shadow mode is report-only; no tests are executed.',
                                      'Static graph paths and Jev relevance are not measured code coverage.',
                                      'Source targets are provisional; executable identities are validated only during execution.',
                                      'CI must authenticate artifact producers; integrity hashes alone do not establish trust. Experimental execution is not enabled.']})
     output = output or store.path / 'selections' / document['integrity'] / 'selection.json'
     save_frozen(output, document)
-    return {'path': str(output), 'selection_id': document['integrity'], 'complete': True,
+    # Retain a canonical snapshot even when the caller chooses a custom output.
+    save_frozen(store.path / 'selections' / document['integrity'] / 'selection.json', document)
+    from .proposals import report_selection
+    proposal_report = report_selection(store, document)
+    return {'report': proposal_report, 'path': str(output), 'selection_id': document['integrity'], 'complete': True,
             'semantic_complete': document['semantic_complete'], 'usage': document['usage'],
             'proposed_selected': sum(len(s['proposed_selected']) for s in suites),
             'proposed_omitted': sum(len(s['proposed_omitted']) for s in suites),
-            'execution': 'full_shadow', 'targets': 'provisional_source_files',
+            'execution': 'none', 'mode': 'shadow', 'targets': 'provisional_source_files',
             'native_validation': 'required_at_execution', 'fallbacks': {s['key']: s['fallbacks'] for s in suites}}

@@ -2,7 +2,7 @@
 
 **Faultline is a test impact analysis experiment for CI and coding agents. It combines CodeGraph's structural relationships with Jev's semantic relevance judgments to identify which tests a change may affect.**
 
-The goal is to reduce CI work while preserving regression detection across languages, frameworks, and monorepos. Faultline starts with full-suite shadow runs so its proposed selections can be assessed before teams enable skipping.
+The goal is to reduce CI work while preserving regression detection across languages, frameworks, and monorepos. Faultline starts in report-only shadow mode: it records which tests it would run while teams keep their existing CI unchanged.
 
 ## Why this exists
 
@@ -29,8 +29,8 @@ flowchart LR
     T["Source targets + reviewed descriptions"] --> F
     F <-->|"Bounded relevance judgments"| J["Jev"]
     F --> S["Frozen proposed selection"]
-    S --> C["CI: validate runner + full shadow suite"]
-    C --> R["Reports: recall, time, cost, misses"]
+    S --> R["Shadow report: would run / would omit, reasons, cost"]
+    R --> H["Track PR snapshots; existing CI unchanged"]
 ```
 
 ## How we'll assess it
@@ -55,6 +55,6 @@ See the [setup guide](docs/install.md) for installation and [API-key configurati
 
 Implemented: revision-specific CodeGraph artifacts with incremental reuse, Git-shared descriptions, native PHPUnit/Behat discovery, batched and cached Jev evaluation, frozen proposals, validated full-suite execution, native/generic outcome import, and Markdown/JSON shadow reports. Existing semantic ranking and retrospective reports remain available.
 
-**All current runs execute full suites.** Proposed omissions are experimental measurements. Framework wiring and Gherkin relationships remain incomplete, and graph gaps produce visible execution fallbacks. Artifact producer trust is supplied by your CI storage permissions.
+**Shadow mode does not execute tests.** It saves proposals per PR/MR and aggregates them across snapshots. Actual execution requires `run --execute` and currently runs full suites; selective CI execution remains future work. Framework wiring and Gherkin relationships remain incomplete, and graph gaps produce visible execution fallbacks. Artifact producer trust is supplied by your CI storage permissions.
 
 The [working TIA guide](docs/tia.md) explains setup and use. Tests include the actual pinned CodeGraph release against synthetic PHP fixtures; real-project regression recall and CI savings remain unproven. [PLAN.md](PLAN.md) tracks validation and future selective execution.

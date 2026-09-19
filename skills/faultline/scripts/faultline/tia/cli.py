@@ -1,4 +1,4 @@
-"""Source analysis, optional native evidence, and shadow execution commands."""
+"""Report-only shadow analysis, optional native evidence, and explicit execution commands."""
 from pathlib import Path
 
 from ..core import FaultlineError
@@ -8,7 +8,7 @@ from .config import load_config
 from .mapping import phpunit_xml
 
 
-COMMANDS = {'discover', 'catalog', 'mapping', 'graph', 'select', 'run', 'record', 'shadow-report'}
+COMMANDS = {'discover', 'catalog', 'mapping', 'graph', 'select', 'run', 'record', 'shadow-report', 'execution-report'}
 
 
 def add_commands(commands):
@@ -20,7 +20,7 @@ def add_commands(commands):
     build.add_argument('--output', type=Path)
     inspect = actions.add_parser('inspect')
     inspect.add_argument('artifact', type=Path)
-    select = commands.add_parser('select', help='Freeze a CodeGraph + Jev proposal; execution remains full shadow')
+    select = commands.add_parser('select', help='Save a CodeGraph + Jev would-run report without executing tests')
     select.add_argument('--base', required=True, help='Actual PR/MR diff base; use a merge-base if required by your host')
     select.add_argument('--head', default='HEAD')
     select.add_argument('--id', help='PR/MR identifier for reports, excluded from inference inputs')
@@ -30,7 +30,8 @@ def add_commands(commands):
     select.add_argument('--dry-run', action='store_true', help='Inspect cached evidence and request estimates; no indexing or API calls')
     select.add_argument('--native', action='store_true', help='Opt into runner discovery in a prepared application environment')
     select.add_argument('--output', type=Path)
-    run = commands.add_parser('run', help='Validate selection and execute a configured full suite, preserving exit status')
+    run = commands.add_parser('run', help='Preview a frozen proposal; --execute opts into full-suite execution')
+    run.add_argument('--execute', action='store_true', help='Explicitly validate and execute the full suite instead of reporting only')
     run.add_argument('--selection', type=Path, required=True)
     run.add_argument('--suite', required=True, help='suite:variant, or an unambiguous suite ID')
     run.add_argument('--prerequisite', action='append', default=[], type=Path, help='Successful prerequisite execution receipt')
@@ -42,7 +43,9 @@ def add_commands(commands):
     record.add_argument('--input', type=Path)
     record.add_argument('--format', choices=['json', 'junit'])
     record.add_argument('--output', type=Path, help='Report basename (writes .json and .md)')
-    commands.add_parser('shadow-report', help='Aggregate saved shadow cases offline, grouping repeated attempts')
+    shadow = commands.add_parser('shadow-report', help='Show saved would-run proposals without running tests')
+    shadow.add_argument('--selection', type=Path, help='Regenerate one proposal; omit to aggregate saved PR/MR snapshots')
+    commands.add_parser('execution-report', help='Aggregate outcomes from explicitly executed full-suite evaluations')
     discovery = commands.add_parser('discover', help='List configured source targets without invoking test runners')
     discovery.add_argument('--output', type=Path)
     discovery.add_argument('--native', action='store_true', help='Enrich source targets with native runner identities')
@@ -87,11 +90,15 @@ def dispatch(store, args):
                       base_graph=args.base_graph, head_graph=args.head_graph, build_graphs=not args.no_build, native=args.native)
     if args.command == 'run':
         from .execution import run_suite
-        return run_suite(store, args.selection, args.suite, prerequisites=args.prerequisite, output=args.output, junit_output=args.junit_output)
+        return run_suite(store, args.selection, args.suite, prerequisites=args.prerequisite, output=args.output, junit_output=args.junit_output, execute=args.execute)
     if args.command == 'record':
         from .results import record
         return record(store, args.selection, args.run, args.input, format=args.format, output=args.output)
     if args.command == 'shadow-report':
+        from .proposals import aggregate, report_selection
+        from .common import checked
+        return report_selection(store, checked(args.selection, 'selection')) if args.selection else aggregate(store)
+    if args.command == 'execution-report':
         from .results import report
         return report(store)
     if args.command == 'mapping':

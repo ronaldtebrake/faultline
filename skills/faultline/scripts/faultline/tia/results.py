@@ -78,8 +78,8 @@ def measure(selection, suite, receipt, tests, complete):
 def record(store, selection_path, run_path, input_path=None, *, format=None, output=None):
     selection, receipt = checked(Path(selection_path), 'selection'), checked(Path(run_path), 'execution')
     if (receipt.get('selection_id') != selection['integrity'] or receipt.get('head') != selection['change']['head']
-            or receipt.get('mode') != 'full_shadow'):
-        raise FaultlineError('Outcomes must belong to a full shadow execution of this exact selection')
+            or receipt.get('mode') != 'full_evaluation'):
+        raise FaultlineError('Outcomes must belong to a explicit full-suite execution of this exact selection')
     suite = next((s for s in selection['suites'] if s['key'] == receipt['suite_key']), None)
     if suite is None:
         raise FaultlineError('Execution suite missing from selection')
@@ -166,7 +166,7 @@ def record(store, selection_path, run_path, input_path=None, *, format=None, out
                         'native_inventory': native, 'proposal_validated': receipt['proposal_validated'],
                         'selection_seconds': selection['selection_seconds'],
                         'limitations': ['Static graph evidence and semantic relevance are not measured coverage.',
-                                        'Shadow mode avoids no actual test execution.',
+                                        'This explicit evaluation executed the full suite; no test execution was avoided.',
                                         'Potential timing assumes serial tests, unchanged durations, and zero setup savings; selection and runner-validation overhead are charged to this suite in full.',
                                         'Agent costs, setup/jobs avoided, parallel critical-path savings, and audit overhead are not measured.',
                                         'Recall is conditional on observed confirmed regressions; unexecuted tests are not passing.']})
@@ -176,10 +176,10 @@ def record(store, selection_path, run_path, input_path=None, *, format=None, out
 
 def write_report(store, observation, *, output=None):
     m = observation['metrics']
-    output = Path(output) if output else store.path / 'reports' / ('shadow-' + observation['execution_id'])
+    output = Path(output) if output else store.path / 'reports' / ('execution-' + observation['execution_id'])
     def display(value):
         return 'unknown / not measured' if value is None else str(round(value, 4) if isinstance(value, float) else value)
-    text = [f"# Faultline shadow report: {observation['suite_key']}", '',
+    text = [f"# Faultline execution report: {observation['suite_key']}", '',
             f"Revision: `{observation['change']['head']}`", '',
             '| Measurement | Value |', '| --- | --- |']
     text += [f'| {key.replace("_", " ")} | {display(value)} |' for key, value in m.items() if key != 'baselines']
@@ -260,10 +260,10 @@ def report(store):
               'limitations': ['Repeated attempts and suites are grouped by repository, PR snapshot, and compatible policy; each change counts once.',
                               'Recall uses complete cases with confirmed regressions; green cases do not establish recall.',
                               'Intervals are descriptive; changes from the same project can be correlated.']}
-    write_json(store.path / 'reports/shadow-summary.json', result)
-    lines = ['# Faultline shadow summary', '', f'{len(cases)} snapshot cases; {len(observations)} execution observations.', '',
+    write_json(store.path / 'reports/execution-summary.json', result)
+    lines = ['# Faultline execution summary', '', f'{len(cases)} snapshot cases; {len(observations)} execution observations.', '',
              '| Policy | Eligible regression cases | Caught cases | Recall | 95% interval |', '| --- | --- | --- | --- | --- |']
     lines += [f"| {key[:12]} | {v['eligible_regression_cases']} | {v['caught_cases']} | {v['failing_change_recall']} | {v['wilson_95_interval']} |" for key, v in policies.items()]
     lines += ['', *('- ' + s for s in result['limitations'])]
-    write_text(store.path / 'reports/shadow-summary.md', '\n'.join(lines) + '\n')
-    return {**result, 'markdown': str(store.path / 'reports/shadow-summary.md')}
+    write_text(store.path / 'reports/execution-summary.md', '\n'.join(lines) + '\n')
+    return {**result, 'markdown': str(store.path / 'reports/execution-summary.md')}
