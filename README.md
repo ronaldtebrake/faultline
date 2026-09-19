@@ -49,7 +49,7 @@ npx skills add git@github.com:ronaldtebrake/faultline.git --skill faultline
 
 Choose your agent when prompted. Python 3.10+ runs the bundled engine; no third-party Python packages are required. Structural indexing needs the pinned CodeGraph 1.6.0 CLI; native discovery needs the configured test runners and their dependencies. The optional Python package exposes the same `faultline` command for local and CI use without an agent session.
 
-See the [setup guide](docs/install.md) for installation and [API-key configuration](docs/install.md#configure-the-jev-api-key). Selected change text, descriptions, and graph evidence are sent to Jev. Credentials, cached predictions, and reports stay in ignored `.faultline/`; reviewed shared descriptions live in `faultline/catalog/`.
+See the [setup guide](docs/install.md) for installation and [API-key configuration](docs/install.md#5-configure-the-jev-api-key). Selected change text, descriptions, and graph evidence are sent to Jev. Credentials, cached predictions, and reports stay in ignored `.faultline/`; reviewed shared descriptions live in `faultline/catalog/`.
 
 ## Status
 
