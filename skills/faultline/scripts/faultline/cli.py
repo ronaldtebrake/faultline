@@ -18,7 +18,7 @@ from .workflow import load_prediction, prediction_path, rank
 def parser():
     cli = argparse.ArgumentParser(prog='faultline', description='Deterministic core for the Faultline Agent Skills')
     cli.add_argument('--root', default='.', help='Target repository (defaults to the current Git root)')
-    cli.add_argument('--version', action='version', version='faultline 0.4.0')
+    cli.add_argument('--version', action='version', version='faultline 0.5.0')
     commands = cli.add_subparsers(dest='command', required=True)
     init = commands.add_parser('init', help='Initialize local storage and a reusable graph baseline for a configured repository')
     init.add_argument('--baseline', default='HEAD', help='Git revision to index once, typically the default branch')
@@ -60,7 +60,7 @@ def main(argv=None):
             print(json.dumps(result, indent=2, ensure_ascii=False))
             if args.command == 'run':
                 return result['exit_code']
-            if args.command == 'select' and not result.get('dry_run') and result.get('semantic', {}).get('targets', 0) and not result.get('semantic_complete'):
+            if args.command == 'select' and result.get('analysis_mode') != 'codegraph_only' and not result.get('dry_run') and result.get('semantic', {}).get('targets', 0) and not result.get('semantic_complete'):
                 return 2
             return 2 if result.get('complete') is False else 0
         config = store.config()

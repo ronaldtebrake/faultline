@@ -8,7 +8,7 @@ from ..core import FaultlineError, digest, now
 from ..credentials import api_key
 from ..jev import ENDPOINT, QUESTION, QUESTION_VERSION, validate_answer
 from ..network import Budget, HTTP
-from .common import checked, save_frozen, seal
+from .cache import AnswerCache
 
 BATCH_VERSION = 'complete-target-packing-v4'
 
@@ -74,6 +74,7 @@ class BatchedJev:
         self.deadline = deadline if deadline is not None else time.monotonic() + config['selection_seconds']
         self.budget = Budget(config['jev_requests'])
         self.http = transport
+        self.cache = AnswerCache(store)
 
     def evaluate_source(self, context, profiles, *, dry_run=False):
         from .packing import SourcePlan
@@ -115,10 +116,9 @@ class BatchedJev:
 
     def cached(self, request, qid):
         key = identity(request)
-        path = self.store.path / 'batch-cache' / key / (qid + '.json')
-        if not path.exists():
+        value = self.cache.get(key, qid)
+        if value is None:
             return None
-        value = checked(path, 'jev-answer')
         if value.get('request_key') != key or value.get('question_id') != qid:
             raise FaultlineError('Batch cache input identity mismatch')
         return answer({'model': value.get('model'), 'answers': {qid: value.get('answer')}}, qid, request['model'])
@@ -132,6 +132,7 @@ class BatchedJev:
         simulated = submitted_questions = 0
         failure = None
         before = self.budget.used
+        available_requests = self.budget.limit - before
         if not dry_run:
             self.store.initialize()
         # Stream stable batches. Cache hits never consume the request or judgment
@@ -160,7 +161,7 @@ class BatchedJev:
             simulated += 1
             # Resending a partial batch preserves the full inference context and
             # counts all its questions against the per-invocation evidence ceiling.
-            fits_budget = (simulated <= self.budget.limit and
+            fits_budget = (simulated <= available_requests and
                            submitted_questions + len(batch_ids) <= self.config.get('max_evidence_pairs', 10000))
             if fits_budget:
                 submitted_questions += len(batch_ids)
@@ -189,16 +190,13 @@ class BatchedJev:
                     id = batch_ids[int(qid[1:])]
                     try:
                         validated = answer(response, qid, request['model'])
-                        save_frozen(self.store.path / 'batch-cache' / key / (qid + '.json'), {
+                        self.cache.put({
                             'schema_version': 2, 'kind': 'jev-answer', 'request_key': key, 'question_id': qid,
                             'model': request['model'], 'answer': {k: response['answers'][qid].get(k) for k in ('type', 'choice', 'probabilities', 'confidence')},
                             'created_at': now()})
                         rows[id] = {**validated, 'request_key': key}
                     except FaultlineError as exc:
                         errors[id] = str(exc)
-                save_frozen(self.store.path / 'batch-cache' / key / 'request.json', {
-                    'schema_version': 2, 'kind': 'jev-request', 'request_key': key, 'request': request,
-                    'evaluator': QUESTION_VERSION, 'batch_version': BATCH_VERSION})
                 if any(batch_ids[int(q[1:])] not in rows for q in missing):
                     remaining += 1
             except (FaultlineError, KeyboardInterrupt) as exc:
@@ -206,7 +204,7 @@ class BatchedJev:
                 remaining += 1
                 for qid in missing:
                     errors[batch_ids[int(qid[1:])]] = failure
-        return {'batches': batch_count, 'uncached_requests': uncached_count, 'cache_hits': cache_hits,
+        return {'halted': failure, 'batches': batch_count, 'uncached_requests': uncached_count, 'cache_hits': cache_hits,
                 'request_ceiling': self.budget.limit, 'remaining_requests': remaining,
                 'pacing_floor_seconds': max(0, uncached_count - 1) * self.config['request_interval'],
                 'selection_seconds_limit': self.config.get('selection_seconds'),

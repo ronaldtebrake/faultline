@@ -8,13 +8,16 @@ from .config import load_config
 from .mapping import phpunit_xml
 
 
-COMMANDS = {'discover', 'catalog', 'mapping', 'graph', 'select', 'run', 'record', 'shadow-report', 'execution-report'}
+COMMANDS = {'discover', 'catalog', 'mapping', 'graph', 'select', 'run', 'record', 'shadow-report', 'execution-report', 'benchmark', 'benchmark-report', 'cache'}
 
 
 def add_commands(commands):
+    cache = commands.add_parser('cache', help='Maintain local Jev answer storage')
+    cache.add_argument('cache_action', choices=['compact'], help='Migrate verified legacy JSON answers to SQLite and remove their old cache files')
     graph = commands.add_parser('graph', help='Build or inspect immutable CodeGraph revision artifacts')
     actions = graph.add_subparsers(dest='graph_action', required=True)
     build = actions.add_parser('build', help='Index an exact Git revision; reuse a compatible artifact incrementally')
+    build.add_argument('--fresh', action='store_true', help='Build without incremental reuse; publish a separate reference artifact')
     build.add_argument('--revision', default='HEAD')
     build.add_argument('--reuse', type=Path)
     build.add_argument('--output', type=Path)
@@ -26,6 +29,7 @@ def add_commands(commands):
     inspect = actions.add_parser('inspect')
     inspect.add_argument('artifact', type=Path)
     select = commands.add_parser('select', help='Save a CodeGraph + Jev would-run report without executing tests')
+    select.add_argument('--graph-only', action='store_true', help='Report the CodeGraph-only baseline; no Jev calls or credentials needed')
     select.add_argument('--base', required=True, help='Actual PR/MR diff base; use a merge-base if required by your host')
     select.add_argument('--head', default='HEAD')
     select.add_argument('--id', help='PR/MR identifier for reports, excluded from inference inputs')
@@ -39,6 +43,23 @@ def add_commands(commands):
     select.add_argument('--dry-run', action='store_true', help='Inspect cached evidence and request estimates; no indexing or API calls')
     select.add_argument('--native', action='store_true', help='Opt into runner discovery in a prepared application environment')
     select.add_argument('--output', type=Path)
+    benchmark = commands.add_parser('benchmark', help='Freeze CodeGraph, Jev, and graph-enriched Jev proposals without running tests')
+    benchmark.add_argument('--base', required=True)
+    benchmark.add_argument('--head', default='HEAD')
+    benchmark.add_argument('--id')
+    benchmark.add_argument('--title', default='', help='Optional outcome-blind PR/MR title')
+    benchmark.add_argument('--description', default='', help='Optional outcome-blind PR/MR description')
+    benchmark.add_argument('--base-graph', type=Path)
+    benchmark.add_argument('--head-graph', type=Path)
+    benchmark.add_argument('--no-build', action='store_true')
+    benchmark.add_argument('--prepare', action='store_true', help='Prepare exact graphs and estimate both Jev arms without calling the API')
+    benchmark.add_argument('--max-requests', type=int, help='Total HTTP attempts across both Jev arms, including retries')
+    benchmark.add_argument('--selection-seconds', type=float, help='Shared inference deadline for both Jev arms')
+    benchmark.add_argument('--output', type=Path)
+    assessment = commands.add_parser('benchmark-report', help='Regenerate a benchmark report or assess exact imported CI outcomes offline')
+    assessment.add_argument('--benchmark', type=Path, required=True)
+    assessment.add_argument('--outcomes', type=Path)
+    assessment.add_argument('--output', type=Path, help='Fresh assessment JSON destination; requires --outcomes')
     run = commands.add_parser('run', help='Preview a frozen proposal; --execute opts into full-suite execution')
     run.add_argument('--execute', action='store_true', help='Explicitly validate and execute the full suite instead of reporting only')
     run.add_argument('--selection', type=Path, required=True)
@@ -82,12 +103,15 @@ def add_commands(commands):
 def dispatch(store, args):
     # With --root, relative data paths belong to the analyzed checkout, including
     # when an installed skill is launched from an IDE's unrelated directory.
-    for name in ('output', 'input', 'artifact', 'reuse', 'base_graph', 'head_graph', 'selection', 'run', 'junit_output', 'legacy', 'baseline'):
+    for name in ('output', 'input', 'artifact', 'reuse', 'base_graph', 'head_graph', 'selection', 'run', 'junit_output', 'legacy', 'baseline', 'benchmark', 'outcomes'):
         value = getattr(args, name, None)
         if value is not None:
             setattr(args, name, (store.root / value).resolve())
     if hasattr(args, 'prerequisite'):
         args.prerequisite = [(store.root / p).resolve() for p in args.prerequisite]
+    if args.command == 'cache':
+        from .cache import AnswerCache
+        return AnswerCache(store).compact()
     if args.command == 'graph':
         from . import graph
         if args.graph_action == 'inspect':
@@ -95,11 +119,24 @@ def dispatch(store, args):
             return {'path': str(path), **value}
         if args.graph_action in ('import', 'export'):
             return graph.transfer(store, load_config(store.root), args.artifact, output=getattr(args, 'output', None))
-        return graph.build(store, load_config(store.root), args.revision, reuse=args.reuse, output=args.output)
+        return graph.build(store, load_config(store.root), args.revision, reuse=args.reuse, output=args.output, fresh=args.fresh)
+    if args.command == 'benchmark':
+        from .benchmark import benchmark
+        return benchmark(store, args.base, args.head, identifier=args.id, base_graph=args.base_graph, head_graph=args.head_graph,
+                         build_graphs=not args.no_build, prepare=args.prepare, output=args.output,
+                         max_requests=args.max_requests, selection_seconds=args.selection_seconds, title=args.title, description=args.description)
+    if args.command == 'benchmark-report':
+        if args.outcomes:
+            from .benchmark_results import assess
+            return assess(store, args.benchmark, args.outcomes, args.output)
+        if args.output:
+            raise FaultlineError('--output requires --outcomes')
+        from .benchmark import render
+        return render(args.benchmark)
     if args.command == 'select':
         from .selection import select
         return select(store, args.base, args.head, identifier=args.id, output=args.output, dry_run=args.dry_run,
-                      base_graph=args.base_graph, head_graph=args.head_graph, build_graphs=not args.no_build, native=args.native, baseline=args.baseline, max_requests=args.max_requests, selection_seconds=args.selection_seconds, prepare=args.prepare)
+                      base_graph=args.base_graph, head_graph=args.head_graph, build_graphs=not args.no_build, native=args.native, baseline=args.baseline, max_requests=args.max_requests, selection_seconds=args.selection_seconds, prepare=args.prepare, graph_only=args.graph_only)
     if args.command == 'run':
         from .execution import run_suite
         return run_suite(store, args.selection, args.suite, prerequisites=args.prerequisite, output=args.output, junit_output=args.junit_output, execute=args.execute)

@@ -142,19 +142,24 @@ def extract(root, rev, target, settings):
     return manifest, sorted(set(unsupported))
 
 
-def build(store, config, ref='HEAD', *, reuse=None, output=None):
+def build(store, config, ref='HEAD', *, reuse=None, output=None, fresh=False):
     started = time.monotonic()
     rev = revision(store.root, ref)
     settings = config['graph']
-    output = Path(output) if output else artifact_path(store, config, rev)
+    if fresh and reuse:
+        raise FaultlineError('A fresh graph build cannot reuse another graph')
+    default = artifact_path(store, config, rev)
+    output = Path(output) if output else (default.with_name('fresh-' + default.name) if fresh else default)
     if output.exists():
         _, saved = load(output, expected_revision=rev, config=settings, repository=config['repository'])
+        if fresh and saved.get('build_mode') != 'fresh':
+            raise FaultlineError('The output contains an incremental graph; use a fresh output directory')
         from .graph_index import settings_hash as index_settings_hash
         if saved.get('index_settings_hash') != index_settings_hash(config):
             raise FaultlineError('Existing graph uses different test-source configuration; use a fresh output path')
         return {'path': str(output.resolve()), 'cache_hit': True, **saved}
     store.initialize()
-    reuse = Path(reuse) if reuse else find_baseline(store, config, rev)
+    reuse = None if fresh else (Path(reuse) if reuse else find_baseline(store, config, rev))
     if run([*settings['command'], '--version'], store.root, 15).removeprefix('codegraph ').strip() != VERSION:
         raise FaultlineError(f'Faultline requires CodeGraph {VERSION}')
     with tempfile.TemporaryDirectory(prefix='faultline-graph-') as temporary:
@@ -192,6 +197,7 @@ def build(store, config, ref='HEAD', *, reuse=None, output=None):
                       'database_sha256': sha(target / 'graph.sqlite'), 'sources': sources, 'files': files,
                       'unsupported': unsupported, 'unindexed': sorted(set(sources) - set(files)),
                       'edge_count': edge_count, 'reused_from': reused['integrity'] if reused else None,
+                      'build_mode': 'incremental' if reused else 'fresh',
                       'build_seconds': time.monotonic() - started})
         write_json(target / 'manifest.json', value)
         publish(target, output, config, rev)
@@ -212,6 +218,7 @@ def evidence(store, config, context, inventory, base_graph=None, head_graph=None
             if files != manifest['files']:
                 raise FaultlineError('Graph manifest does not describe its database')
             result['snapshots'][side] = {k: manifest[k] for k in ('integrity', 'revision', 'database_sha256', 'producer_version')}
+            result['snapshots'][side]['build_mode'] = manifest.get('build_mode', 'unknown')
             changed = set(context['changed_files']).intersection(manifest['sources']) | set(context['changed_files']).intersection(manifest['unsupported'])
             # Catalog prose affects inference but is not application code.
             changed = {p for p in changed if not p.startswith('faultline/catalog/')}

@@ -1,60 +1,79 @@
 # Faultline
 
-**Faultline is a test impact analysis experiment for CI and coding agents. It combines CodeGraph's structural relationships with Jev's semantic relevance judgments to identify which tests a change may affect.**
+Faultline explores whether CodeGraph and Jev can help a team choose the right tests for a code change. It is a test impact analysis tool for repositories with different languages and test frameworks.
 
-The goal is to reduce CI work while preserving regression detection across languages, frameworks, and monorepos. Faultline starts in report-only shadow mode: it records which tests it would run while teams keep their existing CI unchanged.
+The first goal is to measure the value of those decisions. Faultline produces shadow reports while your existing CI continues to run its full test suites. Once we have a useful reference, we can test whether faster or cheaper approaches preserve its results.
 
-## Why this exists
+## How CodeGraph and Jev work together
 
-Large suites spend time testing behavior that a change may not affect. File paths, dependencies, and measured coverage provide useful evidence, but related behavior can cross those boundaries. Faultline investigates whether semantic judgments add useful information to those existing signals.
+CodeGraph builds a local index of source files, symbols, and relationships. Faultline stores configured test targets in that same graph database. Graph searches supply positive impact evidence and context for a change. A test with no discovered path remains eligible for semantic assessment.
 
-The objective needs measurement: semantic relevance, observed regression recall, and measured code coverage are different things. Faultline does not promise that semantic selection preserves all coverage or catches every regression.
+Jev evaluates how the change relates to the behavior in each test. It receives the diff, test source, configured setup source, and, in the combined approach, graph evidence. Faultline retains the relevance probabilities and applies explicit selection rules. These probabilities describe relevance; they do not predict a test's failure rate or prove that skipping it preserves coverage.
 
-## One shared index
+The reference benchmark compares three approaches on the same revision and test inventory:
 
-Faultline initializes a CodeGraph database for a Git revision, including production code and test sources. CodeGraph supplies symbols and relationships; Faultline stores configured test-file targets in the same database, including files such as Gherkin features that have no structural nodes. There is no separate test catalog to maintain.
+| Approach | Evidence | What we want to learn |
+| --- | --- | --- |
+| CodeGraph | Structural relationships and shared mandatory rules | What local impact analysis suggests |
+| Jev | Change context, test source, and configured setup | Whether semantic assessment finds useful relationships |
+| CodeGraph + Jev | The same inputs with graph evidence | Whether structural context improves Jev's decisions |
 
-Teammates and CI can share immutable baseline artifacts. Each branch reuses compatible indexing work and derives exact base/head snapshots without modifying the baseline. Jev reads test source directly from the indexed Git blobs. Framework-specific runners are only needed for explicit native discovery or execution.
+Both Jev approaches assess every readable test target, including changed tests and tests without graph paths. Mandatory rules still apply to their proposed selections. Broad graph hints remain evidence for the combined model to judge, so the comparison can reveal additions and removals.
 
-## Jev's role
+## From main to a pull request
 
-Jev receives bounded change context, test source and graph evidence, then judges relevance on a fixed five-level scale. Faultline retains the probability distribution and calculates deterministic scores. Relevance is not a calibrated probability that a test will fail.
+A CI job can build a fresh CodeGraph baseline whenever a change reaches `main` and publish it as an artifact identified by its exact revision. Developers and PR jobs can use that artifact without rebuilding the same revision locally.
 
-The intended selection policy combines those judgments with mandatory execution rules: changed tests, positive dependency/coverage matches, and uncertain evidence all require execution. Missing evidence must widen execution. Jev complements the evidence provided by test tools.
+Each PR analysis uses its actual diff base and tested head. Those may differ from the latest `main`. Faultline validates supplied graph artifacts and builds missing revision graphs. Both sides matter: the base retains removed relationships, while the head includes new code and tests. Graph artifacts remain separate from Git source and never need to be committed.
 
 ```mermaid
-flowchart LR
-    B["Initialize/shared baseline: code + test index"] --> CGraph["CodeGraph: immutable branch snapshots"]
-    G["Git: exact PR base + head"] --> CGraph
-    CGraph --> F["Indexed tests + diff + dependency paths"]
-    F <-->|"Bounded relevance judgments"| J["Jev"]
-    F --> S["Frozen proposed selection"]
-    S --> R["Shadow report: would run / would omit, reasons, cost"]
-    R --> H["Track PR snapshots; existing CI unchanged"]
+flowchart TD
+    MAIN["Merge to main"] --> BUILD["Build graph for the exact main revision"]
+    BUILD --> STORE["Shared CI baseline artifact"]
+    STORE --> PR["Prepare exact PR base and tested-head graphs"]
+    DIFF["Cumulative PR diff"] --> PR
+    PR --> GRAPH["CodeGraph-only proposal"]
+    PR --> JEV["Jev: source and diff"]
+    PR --> BOTH["Jev: source, diff, and graph evidence"]
+    GRAPH --> REPORT["Freeze comparison report"]
+    JEV --> REPORT
+    BOTH --> REPORT
+    CI["Existing full CI test results"] --> ASSESS["Assess detections, misses, and potential savings"]
+    REPORT --> ASSESS
 ```
 
-## How we'll assess it
+The reference workflow uses fresh graphs for missing revisions. Incremental indexing remains available for ordinary analysis and can be compared with fresh builds later. CI owns artifact distribution, test environments, and scheduling. A coding agent can run the same Python engine locally.
 
-Compare full execution, simple dependency/path and lexical baselines, Jev, and the combined policy on the same changes. Freeze decisions before inspecting outcomes. Report failing-change recall, failing-test recall, execution savings, and inference/audit overhead separately; report coverage only where it is measured.
+## What the report tells you
 
-Start with one ordinary PR/MR at a time. Preserve incomplete runs, flakes, infrastructure failures, missing artifacts, and unknown outcomes in the evidence. Repeated attempts do not count as independent regressions. A single green run cannot show that omitted tests were unnecessary.
+The report shows which targets each approach would run, their disagreements, and any unresolved assessments. CodeGraph's positive matches are separated from mandatory rules and fallbacks. A target it does not suggest is not established to be irrelevant.
 
-## Install and use
+After the proposals are frozen, import existing CI outcomes to compare confirmed regressions caught or missed by each policy. The assessment includes failing-change recall, failing-test recall, and diagnostic rankings at equal target counts. It keeps flakes, infrastructure failures, unknown failures, and incomplete runs visible. A green run has no regression denominator, and repeated CI attempts are not independent cases.
 
-Faultline ships as one self-contained Agent Skill with native Codex and Claude Code plugin packaging. Install with the [Skills CLI](https://github.com/vercel-labs/skills):
+Whole supplied diffs and test files stay intact in the reference benchmark. Inputs that exceed the configured Jev limits remain unassessed. The report exposes those gaps instead of claiming that a shortened input represents the whole test. Both Jev approaches share one request ceiling and inference deadline. Partial assessments remain proposed to run and do not qualify for comparative recall claims.
+
+Test-duration sums estimate potential serial work avoided. They do not measure parallel CI savings. Measured coverage requires separate instrumentation. Token usage and analysis time are recorded, but neither takes priority over establishing useful test-selection behavior.
+
+## Install and try it
+
+Faultline ships as a self-contained Agent Skill and as a Python CLI. Codex and Claude Code plugin manifests are included.
 
 ```bash
 npx skills add git@github.com:ronaldtebrake/faultline.git --skill faultline
 ```
 
-Choose your agent when prompted. Python 3.10+ runs the bundled engine; no third-party Python packages are required. Structural indexing needs the pinned CodeGraph 1.6.0 CLI; execution and optional native enrichment need the configured test runners and their dependencies. The optional Python package exposes the same `faultline` command for local and CI use without an agent session.
+Follow the [installation guide](docs/install.md), then ask your agent:
 
-See the [setup guide](docs/install.md) for installation and [API-key configuration](docs/install.md#5-configure-the-jev-api-key). Selected change text, test source and graph evidence are sent to Jev. Credentials, cached predictions, and reports stay in ignored `.faultline/`; source/test records and structural relationships live together in `.faultline/graphs/<hash>/graph.sqlite`.
+> Use Faultline to benchmark this PR with CodeGraph, Jev, and CodeGraph plus Jev. Prepare the graphs and show the estimated work before inference. Keep the total Jev requests within the agreed budget. Save the comparison report without executing tests or changing CI.
+
+The [benchmark guide](skills/faultline/references/benchmark.md) covers the commands, outcome format, and main-branch baseline job. Python 3.10+ runs the engine. Structural indexing requires CodeGraph 1.6.0. The graph-only report requires no Jev credential; semantic assessment reads `TYPESAFE_API_KEY` from the environment or a local `.env` file as described in the setup guide.
+
+New Jev cache entries use one `.faultline/jev-cache.sqlite` file. A benchmark stores its inputs and decisions in one frozen JSON file with a Markdown report beside it. Generated evidence and credentials remain in ignored `.faultline/`. Benchmark JSON contains source evidence and should stay within your repository's access controls.
 
 ## Status
 
-Implemented: revision-specific CodeGraph artifacts with incremental reuse, portable baseline import/export and a primary graph source/test index, native PHPUnit/Behat discovery, bounded Jev cohorts with preflight estimates, completed-target progress, and resumable caches, frozen proposals, validated full-suite execution, native/generic outcome import, and Markdown/JSON shadow reports. Existing semantic ranking and retrospective reports remain available.
+The reference benchmark, fresh graph artifacts, CodeGraph-only reports, and offline CI-outcome assessment are implemented and covered by synthetic tests. Live Jev quality, real-project regression recall, and CI savings still need measurement.
 
-**Shadow mode does not execute tests.** It saves proposals per PR/MR and aggregates them across snapshots. Actual execution requires `run --execute` and currently runs full suites; selective CI execution remains future work. Graph language support and framework wiring remain incomplete. Graph gaps are reported, while Jev continues scoring source, including Behat features. Unscored or partially scored targets remain proposed to run. Reports show semantic completion separately from graph limitations. Artifact producer trust is supplied by your CI storage permissions.
+Shadow analysis executes no tests. Existing explicit execution commands run full suites; selective CI execution remains future work. Framework wiring and CodeGraph language support can leave gaps, including test sources without structural nodes. Those targets remain visible for Jev assessment.
 
-The [working TIA guide](docs/tia.md) explains setup and use. Tests include the actual pinned CodeGraph release against synthetic PHP fixtures; real-project regression recall and CI savings remain unproven. [PLAN.md](PLAN.md) tracks validation and future selective execution.
+[PLAN.md](PLAN.md) tracks validation, rollout, and the later optimization experiments.
