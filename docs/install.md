@@ -4,8 +4,10 @@ Faultline bundles one Agent Skill and its evaluation scripts. Install it with th
 
 ## Requirements
 
-- An agent that supports Agent Skills, with repository, file, and shell access.
+- For IDE use, an agent that supports Agent Skills, with repository, file, and shell access. CI can use the standalone CLI without an agent.
 - Python 3.10+ to run the bundled evaluator, with no third-party Python runtime packages.
+- CodeGraph 1.6.0 for structural indexing; see the [graph workflow](../skills/faultline/references/graph-workflow.md#install-and-configure).
+- Native test runners and their existing dependencies for discovery and execution.
 - Node.js/npm when using `npx skills`; native plugin installation does not require npm.
 - Existing Git credentials for this private repository, and authenticated hosting tools for PR/MR analysis.
 - `TYPESAFE_API_KEY` configured below for live ranking. Indexing, dry runs, and saved reports work without it. Selected change text and test descriptions are sent to TypeSafe.
@@ -87,57 +89,36 @@ claude --plugin-dir /path/to/faultline
 
 Refresh/restart your agent after installation if the skill is not visible. For migration from the old installer, remove only the old Faultline `index-tests` and `rank-tests` directories or symlinks you previously installed. Their data remains in the target repository's `.faultline/` directory.
 
+## Standalone CLI for local development and CI
+
+The Python package and skill entry point use the same engine. To test your current Faultline checkout from another repository:
+
+```bash
+python3 -m venv .venv-faultline
+.venv-faultline/bin/pip install -e /path/to/faultline
+npm install -g @colbymchenry/codegraph@1.6.0
+.venv-faultline/bin/faultline --help
+```
+
+Ignore the virtual environment in the target repository, or create it outside the checkout. Use a pinned Git revision or wheel for CI; an editable install is convenient for testing unpublished local changes. CodeGraph's agent/MCP installer is unnecessary.
+
 ## First trial
 
-In the target repository, ask the agent:
+Ask the installed skill:
 
 ```text
-Use Faultline to build the Faultline catalog for this repository.
-Show the discovered suite coverage and a few representative profiles.
+Use Faultline to configure native test discovery and reviewed descriptions for this repository.
+Then analyze PR 123 with CodeGraph and Jev, run the full suites in shadow mode,
+and save the findings and report. Respect the configured budgets.
 ```
 
-Then, in a context that has not seen the historical failures:
+The agent handles PR metadata through existing hosting tools and invokes the same commands CI uses. There is no built-in GitHub/GitLab client or bulk PR crawler. Work from the actual tested revision and cumulative diff base; freeze proposals before inspecting outcomes. For ranking-only requests, the agent can stop after selection.
 
-```text
-Use Faultline to analyze PR 123 with Faultline.
-Start with this one PR. Freeze predictions before inspecting test outcomes,
-then save the findings and report. Respect the configured request ceilings.
-```
+Follow the [graph workflow](../skills/faultline/references/graph-workflow.md) for complete configuration and runnable `select`, `run`, `record`, and `shadow-report` examples. `record` saves a report immediately after a single run; `shadow-report` aggregates saved cases offline. Use fresh selection, receipt, and result paths for each attempt.
 
-Use the skill picker or the agent's supported explicit invocation syntax if it does not select the skill from that request. In Codex, you can reference `$faultline`. Refresh/restart the agent if the newly installed skill do not appear.
+The default Jev ceiling is 100 HTTP attempts, with bounded batches, pacing, retries, and elapsed time. Set a smaller `evaluator.jev_requests` budget in committed `faultline.json` for an initial pilot. Missing credentials or incomplete evidence produce a full-execution fallback. Existing exact-input caches can be restored from trusted CI jobs.
 
-For current ranking without retrospective comparison:
-
-```text
-Use Faultline to rank the tests for PR 123.
-```
-
-The agent handles the end-to-end request, including input preparation and report generation. There is no framework-discovery `faultline analyze --pr` command: the skill is the orchestrator, while the helper accepts structured files.
-
-If the agent has already inspected a failure, it must not claim to have produced an outcome-blind historical prediction. A fresh session can prepare the input without the outcomes; the comparison happens only after a complete ranking is saved.
-
-## API usage and incomplete evidence
-
-The initial configuration uses a pinned Jev model, one request at a time, one second between requests, a 100-request ceiling including retries, and up to two retries for explicit rate-limit/overload responses. One test judgment uses one request; a large suite can exceed that ceiling even for one PR.
-
-The dry run shows how many uncached calls are needed. If it exceeds the ceiling, the helper makes no Jev calls and writes an incomplete ranking status. Review the estimate and set an appropriate limit in `.faultline/config.json` or use the helper's `--max-requests N`. Do not silently rank only the first N tests. Successful pair predictions survive interruptions and are reused on the next invocation.
-
-GitHub/other history requests are made by the agent's tools. The skill instructs it to cache, limit, and pace collection; the Python helper cannot enforce calls made outside it. Neither part starts CI workflows or changes required checks.
-
-A report may legitimately say performance cannot be assessed: no confirmed regression, missing artifacts, unmapped failing tests, or unreconstructable historical context are insufficient evidence. The report retains those limitations. Unknown failures can be reviewed later and reevaluated without repeating unchanged inference.
-
-## Files and inspection
-
-- `.faultline/index.jsonl`: test profiles and provenance.
-- `.faultline/history/`: agent-collected change/run evidence.
-- `.faultline/predictions/<id>/prediction.json`: frozen ranking inputs and probabilities.
-- `.faultline/predictions/<id>/ranking.md`: ranking-only report.
-- `.faultline/evaluations/<id>/`: outcome evidence, findings, Markdown and JSON case reports.
-- `.faultline/reports/latest.md` and `latest.json`: offline aggregate.
-
-The agent can show individual profiles with `explain-test`, regenerate a case with `report --prediction <id>`, or summarize all saved cases with `report`. Reports make no API calls. A one-PR summary remains a case study, not proof of general ranking quality.
-
-Detailed contracts: [index](../skills/faultline/references/index-schema.md), [evaluator](../skills/faultline/references/evaluator.md), [historical reports](../skills/faultline/references/report.md).
+The standalone legacy `rank`/`evaluate`/`report` workflow remains available for previously prepared profile and prediction files. Its contracts are described in the bundled [evaluator](../skills/faultline/references/evaluator.md) and [historical reporting](../skills/faultline/references/report.md) references; it does not consume graph selections.
 
 ## Development validation
 
@@ -149,7 +130,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=skills/faultline/scripts python3 -m unittes
 
 Distribution has also been checked with a real Skills CLI 1.7.0 local copy installation and the Codex plugin manifest validator. Native Codex/Claude plugin installation and remote private-Git installation have not been exercised end to end.
 
-The suite uses synthetic data and mocked HTTP. It verifies portable installation, incremental indexing, caching, rate-limit handling, probability validation, prediction integrity, outcome separation, metrics, and offline reports. It does not establish live Jev quality or the correctness of an agent's repository interpretation.
+The default suite uses synthetic data and mocked HTTP. Set `FAULTLINE_CODEGRAPH` to the pinned executable path to run the additional real-producer conformance test. It verifies portable installation, incremental indexing, caching, rate-limit handling, probability validation, prediction integrity, outcome separation, metrics, and offline reports. It does not establish live Jev quality or the correctness of an agent's repository interpretation.
 
 ## Package layout and contributor tools
 
@@ -165,6 +146,6 @@ skills/faultline/
   scripts/faultline/               Standard-library-only evaluation code
 ```
 
-Instructions resolve the helper relative to the installed skill, then pass the analyzed repository with `--root`. Installation location and analyzed repository can be different. The helper writes only to the analyzed repository's `.faultline/`; it does not modify the installed bundle.
+Instructions resolve the helper relative to the installed skill, then pass the analyzed repository with `--root`. Installation location and analyzed repository can be different. Generated evidence stays in the analyzed repository's `.faultline/`; catalog maintenance updates its committed `faultline/catalog/`. CodeGraph works in temporary Git snapshots. The engine does not modify the installed skill bundle.
 
 For contributor use, `python3 skills/faultline/scripts/run.py --help` works directly. An optional `pip install .` in a virtual environment exposes the equivalent `faultline` command; it is not required for skill or plugin installation.

@@ -4,7 +4,7 @@
 
 Build a language-agnostic test impact analysis engine for CI and coding agents. Combine deterministic positive impact evidence with Jev relevance judgments to reduce CI work while preserving observed regression detection. Semantic relevance, regression recall, and measured code coverage are separate metrics. No policy guarantees preservation of all coverage.
 
-The Python engine owns discovery validation, scoring, selection, caching, execution, and reporting. Narrow integrations consume native runner inventories and existing coverage/dependency tooling. The skill supports setup, reviewed descriptions, local use, and explanations. CI requires the engine and test environment, not a coding-agent session.
+The Python engine owns discovery validation, scoring, selection, caching, execution, and reporting. CodeGraph 1.6.0 owns structural parsing/resolution and its embedded SQLite graph. Faultline snapshots both base and head, reuses immutable artifacts, and joins reverse file relationships to native runner inventories. Existing coverage tooling is optional positive enrichment; do not build a language parser stack. The skill supports setup, reviewed descriptions, local use, and explanations. CI requires the engine and test environment, not a coding-agent session.
 
 Git shares `faultline.json` and `faultline/catalog/`. Ignored `.faultline/` holds credentials, native evidence, predictions, caches, and reports. Bootstrap descriptions once from readable test names/steps; use an agent only where enrichment helps. Developers review changed descriptions with their tests. Production changes affect execution without necessarily invalidating descriptions. Missing descriptions require execution, never automatic AI generation in CI.
 
@@ -14,21 +14,23 @@ Git shares `faultline.json` and `faultline/catalog/`. Ignored `.faultline/` hold
 flowchart TD
     DEV["Developer + coding agent: maintain descriptions"] --> GIT["Git: code, suite configuration, catalog"]
     GIT --> CI["CI checks out tested revision"]
-    CI --> DISC["discover + catalog check"]
+    CI --> GRAPH["CodeGraph: exact base/head graph artifacts"]
+    GRAPH --> DISC["discover + catalog check"]
     DEV --> LOCAL["Optional local engine use"]
     DISC --> SELECT["select: mandatory rules + semantic judgments"]
     LOCAL --> SELECT
     SELECT <-->|"Selected change context and test evidence"| JEV["Jev API"]
     STORE["Trusted CI cache artifacts"] --> SELECT
+    STORE --> GRAPH
     SELECT --> FROZEN["Frozen selection.json"]
     FROZEN --> RUN["run: full suite in shadow mode"]
     RUN --> RUNNERS["PHPUnit / Behat; Playwright next"]
-    RUNNERS --> REPORT["record + report: outcomes, misses, time, costs"]
+    RUNNERS --> REPORT["record + shadow-report: outcomes, misses, time, costs"]
     REPORT --> STORE
     REPORT --> DEV
 ```
 
-`discover`, `catalog`, and `mapping import-phpunit` are implemented. `select`, `run`, `record`, shared cache transport, and TIA reports are delivery tasks below. Existing `rank`, `evaluate`, and `report` retain their legacy ranking contracts.
+`graph build/inspect`, `discover`, `catalog`, `select`, `run`, `record`, `shadow-report`, and optional `mapping import-phpunit` are implemented for full-suite shadow use. Existing CI artifact tooling transports immutable graph and Jev caches; producer authentication remains a CI responsibility. Existing `rank`, `evaluate`, and `report` retain their legacy ranking contracts.
 
 Git/hosting tooling supplies cumulative PR/MR changes, tested revisions, and outcome artifacts. CI retains containers, services, isolation, matrices, and scheduling. Faultline does not replace hosting platforms or the CI scheduler.
 
@@ -46,23 +48,35 @@ Validation completed: offline reuse, freshness, incomplete discovery, migration,
 
 Remaining acceptance: validate a complete real suite inventory and reviewed descriptions at the chosen PR revision, verify native IDs against actual execution/results, bound discovery/indexing effort, and qualify remote-process coverage before using it. Extend the verified runner-version range through conformance fixtures. Behat HTTP coverage requires evidence from the application-serving process; local CLI coverage is insufficient. See [the command and data contracts](skills/faultline/references/shared-catalog.md).
 
-## Stage 2 — Selection engine and execution
+## Stage 2 — CodeGraph selection engine and shadow execution
+
+Implemented shadow path: exact Git source export into isolated snapshots; pinned producer/schema validation; portable closed SQLite artifacts; compatible incremental reuse; base/head reverse dependency evidence; source-gap and traversal-limit fallbacks; graph-context Jev batching and immutable answer caches; full execution receipts; JUnit/generic outcome recording; per-case and aggregate reports.
+
+Validated with offline contract tests and the actual CodeGraph 1.6.0 executable on synthetic PHP dependencies. Live Jev evaluation and real CI recall remain unverified. See [the working workflow](skills/faultline/references/graph-workflow.md).
+
+The requirements below span the implemented shadow path and future selective execution. Exact filtering, trusted suspension state, automatic audits, broader native runner versions, and production CI trust configuration are not enabled by this stage.
+
 
 - Normalize the cumulative PR/MR diff and exact tested snapshot, including synthetic merge revisions. Freeze base/head, configuration/catalog/policy versions, evidence hashes, selected/omitted units, reasons, fallbacks, prerequisites, timings, and usage in immutable `selection.json`.
-- Add `select`, `run --selection … --suite …`, and `record`. Reject revision/configuration/catalog/selector mismatches before execution. Preserve runner exit status. Never interpret missing, empty, invalid, or interrupted decisions as permission to run zero tests.
+- Expose `select`, `run --selection … --suite …`, and `record`. Reject revision/configuration/catalog/selector mismatches before execution. Preserve runner exit status. Never interpret missing, empty, invalid, or interrupted decisions as permission to run zero tests.
 - Mandatory execution includes changed/new tests, must-run rules, positive dependency/coverage matches, relevant setup changes, unresolved failures, and uncertain units. Missing relationships are not negative evidence. Bound unknown changes by explicit scope; unbounded unknowns execute every suite.
 - Use native filtering at file/class granularity, including all associated datasets, scenarios, and variants. Validate exact selectors against discovery; unsupported filters or unresolved prerequisites widen execution. CI supplies services, containers, and scheduling.
 - Default to shadow mode: freeze the proposal, then run everything. Reviewed experimental opt-in may omit only complete/current units with `P(irrelevant) >= 0.95`. This is an experimental threshold, not a calibrated safety guarantee.
 - On missing credentials, Jev errors, invalid responses/selectors, insufficient evidence, expired/unavailable trusted state, or exhausted budgets, execute the affected suite fully and record why.
 - Retain the five-level evaluator (`irrelevant`, `weak`, `plausible`, `strong`, `direct`), probabilities, expected 0–4 score, deterministic identity tie-breaks, and pinned model/evaluator versions. Benchmark evaluator changes separately.
-- Verify Jev's multi-question integration and batch several judgments against shared change context. Bound batch bytes/units, requests including retries, and elapsed time; validate each answer independently. Keep existing serial pacing, bounded retry/backoff, interruption recovery, and credential-safe errors.
+- The official multi-question HTTP contract is verified; validate live model behavior and batch several judgments against shared change context. Bound batch bytes/units, requests including retries, and elapsed time; validate each answer independently. Keep existing serial pacing, bounded retry/backoff, interruption recovery, and credential-safe errors.
 - Cache actual complete inference inputs: selected change text, test evidence, full batch context, question/schema, and model/evaluator versions. PR numbers, timestamps, and run metadata are provenance outside inference identity. Similar descriptions do not justify reuse across changed inputs.
 - Share immutable caches using existing CI artifacts. Only trusted jobs publish reusable evidence; PR jobs cannot overwrite trusted caches. Missing artifacts are cache misses. Integrity hashes detect modification, not malicious producers; enforce producer trust outside those hashes.
 - Keep `TYPESAFE_API_KEY` resolution from environment, `.faultline/.env`, then root `.env`. No credentials in evidence; read them only for live evaluation. No embeddings, lexical top-K exclusion, vector database, or hosted service initially.
 
-**Milestone 1:** inspectable indexing and cached ranking of a real cumulative change, with reproducible native identities, shared descriptions, frozen decisions, visible fallbacks, and verified execution behavior. A second checkout reuses descriptions and identical inference inputs without new indexing or calls.
+**Milestone 1:** inspectable indexing and cached ranking of a real cumulative change, with reproducible native identities, shared descriptions, frozen decisions, visible fallbacks, and verified execution behavior. A second checkout reuses descriptions, compatible graph artifacts, and identical inference inputs without repeated full indexing or calls.
 
 ## Stage 3 — Prospective shadow pilot
+
+Next validation: run the complete graph-backed workflow on a representative PR/MR, using its actual diff base and tested head. Audit graph relationships against native inventory, including custom PHP extensions, YAML service wiring, Gherkin steps, and remote boundaries. Keep outcomes hidden until proposals are frozen. Validate Linux artifact reuse, indexing resources, and graph-only versus hybrid evidence before considering selective execution.
+
+The implemented reports group retries and suites by compatible change snapshot, retain exact observations, and publish denominators and descriptive uncertainty. Baselines currently compare equal execution-unit counts; equal-runtime budgets, setup/job savings, audit costs, and externally incurred agent costs need further measurement.
+
 
 - Start with one ordinary PR/MR. Preserve existing full execution; do not scan a hundred PRs or trigger historical reruns by default. Resolve exact tested revisions/attempts with bounded, cached hosting calls.
 - Freeze decisions before outcomes exist. Collect green runs, regressions, flakes, infrastructure failures, and incomplete/expired runs. Passing retries are not automatically flakes; CI downtime is not a product regression.
