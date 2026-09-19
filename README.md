@@ -1,65 +1,57 @@
 # Faultline
 
-**Faultline is an agent-native semantic test-ranking plugin. It teaches your coding agent to understand your test suite, then uses a fast evaluation model to rank which tests are most likely to expose regressions from a change.**
+**Faultline is a test impact analysis experiment for CI and coding agents. It combines evidence from existing test tools with Jev's semantic relevance judgments to identify which tests a change may affect.**
 
-Faultline ships as one self-contained Agent Skill, with native Codex and Claude Code plugin packaging. Its evaluation scripts travel with the skill. It is a proof of concept: the mechanics are implemented and tested offline, while ranking quality still needs to be measured on real changes.
+The goal is to reduce CI work while preserving regression detection across languages, frameworks, and monorepos. Faultline starts with full-suite shadow runs so its proposed selections can be assessed before teams enable skipping.
 
 ## Why this exists
 
-Large test suites can take a long time to reveal a regression. The test that detects the problem may execute near the end, leaving developers and coding agents waiting for useful feedback.
+Large suites spend time testing behavior that a change may not affect. File paths, dependencies, and measured coverage provide useful evidence, but related behavior can cross those boundaries. Faultline investigates whether semantic judgments add useful information to those existing signals.
 
-Paths, dependencies, coverage, and failure history provide useful signals. But a change can affect related behaviors across those boundaries. Faultline investigates whether comparing a change directly with the behavior protected by each test can bring relevant failures forward.
+The objective needs measurement: semantic relevance, observed regression recall, and measured code coverage are different things. Faultline does not promise that semantic selection preserves all coverage or catches every regression.
 
-## The agent understands the repository
+## Shared understanding, native evidence
 
-Your coding agent discovers the test framework, reads the tests and their setup, and creates an inspectable description of what each test demonstrates. It uses the repository's own tools to identify executable tests and retrieve change context.
+Test descriptions live with the code and are reviewed when tests change. A coding agent can help create or improve those descriptions; teammates and CI reuse them through Git. A production change can affect whether a test should run without requiring its description to be rewritten.
 
-This makes the agent the adaptation layer. Faultline does not need its own PHPUnit, Jest, Playwright, or other framework adapters. Each test becomes a generic profile with an exact identity, source, description, hashes, and provenance. Unchanged profiles can be reused.
+Existing runner tools establish executable identities and produce results or coverage. Narrow integrations translate those outputs into common contracts. Faultline keeps its decisions language agnostic while preserving each runner's datasets, scenarios, variants, and setup requirements.
 
-## Jev judges relevance
+## Jev's role
 
-Jev receives the change context and a test's description, then answers a fixed question: **How much regression-detection value does this test have for this change?**
+Jev receives selected change context and test evidence, then judges relevance on a fixed five-level scale. Faultline retains the probability distribution and calculates deterministic scores. Relevance is not a calibrated probability that a test will fail.
 
-Faultline converts probabilities over five relevance levels into a deterministic ranking. The agent can explain the result, but cannot change the scores or reorder tests based on its intuition. Full probability distributions remain available for inspection. A relevance score is not a calibrated probability that a test will fail.
+The intended selection policy combines those judgments with mandatory execution rules: changed tests, positive dependency/coverage matches, and uncertain evidence all require execution. Missing evidence must widen execution. Jev complements the evidence provided by test tools.
 
-```text
-Agent: repository understanding → test catalog + change context
-                                           ↓
-                              Jev: bounded relevance judgment
-                                           ↓
-                             Faultline: deterministic ranking
-                                           ↓
-                           Agent: interpret evidence and misses
+```mermaid
+flowchart LR
+    G["Git: change + shared catalog"] --> F["Faultline engine"]
+    T["Native runner + coverage evidence"] --> F
+    F <-->|"Bounded relevance judgments"| J["Jev"]
+    F --> S["Frozen proposed selection"]
+    S --> C["CI: full suite in shadow mode"]
+    C --> R["Reports: recall, time, cost, misses"]
 ```
 
-## Install
+## How we'll assess it
 
-Using the [Skills CLI](https://github.com/vercel-labs/skills), run this from the repository you want to analyze:
+Compare full execution, simple dependency/path and lexical baselines, Jev, and the combined policy on the same changes. Freeze decisions before inspecting outcomes. Report failing-change recall, failing-test recall, execution savings, and inference/audit overhead separately; report coverage only where it is measured.
+
+Start with one ordinary PR/MR at a time. Preserve incomplete runs, flakes, infrastructure failures, missing artifacts, and unknown outcomes in the evidence. Repeated attempts do not count as independent regressions. A single green run cannot show that omitted tests were unnecessary.
+
+## Install and use
+
+Faultline ships as one self-contained Agent Skill with native Codex and Claude Code plugin packaging. Install with the [Skills CLI](https://github.com/vercel-labs/skills):
 
 ```bash
 npx skills add git@github.com:ronaldtebrake/faultline.git --skill faultline
 ```
 
-Choose your agent when prompted, or add `--agent codex` or `--agent claude-code`. Private repository access uses your existing Git credentials. Python 3.10+ is needed to run the bundled evaluator; no pip install or third-party Python packages are required.
+Choose your agent when prompted. Python 3.10+ runs the bundled engine; no third-party Python packages are required. Native discovery also needs the configured test runners and their dependencies. The optional Python package exposes the same `faultline` command for local tooling and future CI use.
 
-Native Codex and Claude Code plugin installation, local development, and API setup are covered in [the setup guide](docs/install.md). Choose one installation method.
+See the [setup guide](docs/install.md) for installation and [API-key configuration](docs/install.md#configure-the-jev-api-key). Selected change text and test descriptions are sent to Jev. Credentials, cached predictions, and reports stay in ignored `.faultline/`; reviewed shared descriptions live in `faultline/catalog/`.
 
-## One skill, the whole workflow
+## Status
 
-Ask your agent to “Use Faultline to index this repository’s tests,” then “Use Faultline to analyze PR 123 and save a report.” Indexing preserves exact runner identities and describes behavior supported by the source.
+Implemented: the original semantic ranking and historical reporting workflow, shared catalog commands, native PHPUnit/Behat discovery, and import of PHPUnit test-attributed XML coverage. The [shared-catalog guide](docs/tia.md) explains setup and migration.
 
-For historical analysis, the agent freezes the ranking before collecting outcomes, compares the evidence, and saves findings and a report in the same interaction. Start with one PR/MR; additional cases accumulate gradually. Saved reports can be regenerated without API calls.
-
-## Evidence before execution policy
-
-Historical evaluation asks where confirmed failing tests appear in the ranking. Faultline compares those positions with lexical, path-based, seeded-random, and verified historical-order baselines. Where durations permit, it estimates serial time to a known failure without claiming that serial sums describe parallel CI wall-clock time.
-
-Predictions are frozen before the agent reads outcomes. Reports distinguish confirmed regressions, likely flakes, infrastructure failures, baseline failures, and unknowns. Missing evidence is never treated as a passing test. A single PR is a case study; a green run cannot establish that low-ranked tests were unnecessary.
-
-The initial release ranks and reports. It does not run tests, skip tests, trigger workflows, or modify CI. The catalog, runner locators, and structured rankings give both agents and future CI integrations a reusable basis for execution ordering, fast feedback jobs, and eventually explicit test budgets—if the evidence supports those policies.
-
-## Local data and external evaluation
-
-Catalogs, cached predictions, and reports stay under the target repository's ignored `.faultline/` directory. Selected change text and test descriptions are sent to Jev using `TYPESAFE_API_KEY`, configured in the environment or a local `.faultline/.env` file ([setup](docs/install.md#configure-the-jev-api-key)). Requests are paced, bounded, cached, and resumable. Repository history collection uses the agent's existing authenticated tools.
-
-The implementation and remaining validation work are tracked in [PLAN.md](PLAN.md). Installation, usage, and testing instructions are in [the setup guide](docs/install.md).
+The new selection/execution engine, trusted shared caches, and prospective CI reports are still being built. Current catalog commands do not skip tests. Offline tests and isolated native-tool fixtures validate the foundation; real-project usefulness and regression recall remain unproven. Remaining delivery work and acceptance criteria are in [PLAN.md](PLAN.md).

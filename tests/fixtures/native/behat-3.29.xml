@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="default">
+  <testsuite name="numbers" file="features/numbers.feature" tests="3" skipped="3" failures="0" errors="0" time="0.006">
+    <testcase name="positive number #1" classname="numbers" status="skipped" time="0.005" file="features/numbers.feature" line="3"></testcase>
+    <testcase name="positive number #2" classname="numbers" status="skipped" time="0.000" file="features/numbers.feature" line="3"></testcase>
+    <testcase name="positive number" classname="numbers" status="skipped" time="0.000" file="features/numbers.feature" line="9"></testcase>
+  </testsuite>
+</testsuites>

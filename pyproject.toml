@@ -16,3 +16,6 @@ faultline = "faultline.cli:main"
 [tool.setuptools.packages.find]
 where = ["skills/faultline/scripts"]
 include = ["faultline*"]
+
+[tool.setuptools.package-data]
+"faultline.tia" = ["*.php"]

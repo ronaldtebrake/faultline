@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tests>
+ <testCaseClass name="NumbersTest">
+  <testCaseMethod name="testPositive" groups="default" dataSet="&quot;first&quot;"/>
+  <testCaseMethod name="testPositive" groups="default" dataSet="&quot;second&quot;"/>
+ </testCaseClass>
+</tests>

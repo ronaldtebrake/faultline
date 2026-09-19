@@ -1,27 +1,99 @@
 # Faultline implementation and validation plan
 
-Faultline is an agent-native semantic test-ranking plugin, distributed as an Agent Skill and native plugins. The agent understands repositories and gathers evidence; Jev provides bounded relevance judgments; deterministic code owns ranking, caching, and measurements.
+## Goal and architecture
 
-## Architecture and boundaries
+Build a language-agnostic test impact analysis engine for CI and coding agents. Combine deterministic positive impact evidence with Jev relevance judgments to reduce CI work while preserving observed regression detection. Semantic relevance, regression recall, and measured code coverage are separate metrics. No policy guarantees preservation of all coverage.
 
-- The agent handles discovery, source understanding, stable runner identities, Git/hosting operations, historical-result interpretation, and miss analysis. There are no framework adapters or hosting clients in the core.
-- One self-contained `faultline` skill includes indexing, ranking, and reporting workflows plus a standard-library-only Python helper. Scripts and references stay inside the skill so selective Skills CLI installation is complete. An optional Python package exposes the same CLI. No MCP server or hosted service is required.
-- Indexing produces `.faultline/index.jsonl`. Ranking receives generic profiles and structured change input. Exact runner locators remain available for future agent/CI execution policies.
-- The default interaction analyzes one PR/MR, including relevant historical snapshots and attempts. A larger historical sample is an explicit request, not an automatic scan.
-- Initial behavior is ranking and local reporting. Test execution, selective validation, test budgets, and CI modification remain outside the proof of concept.
+The Python engine owns discovery validation, scoring, selection, caching, execution, and reporting. Narrow integrations consume native runner inventories and existing coverage/dependency tooling. The skill supports setup, reviewed descriptions, local use, and explanations. CI requires the engine and test environment, not a coding-agent session.
 
-## Stage 1 — Agent-generated test understanding
+Git shares `faultline.json` and `faultline/catalog/`. Ignored `.faultline/` holds credentials, native evidence, predictions, caches, and reports. Bootstrap descriptions once from readable test names/steps; use an agent only where enrichment helps. Developers review changed descriptions with their tests. Production changes affect execution without necessarily invalidating descriptions. Missing descriptions require execution, never automatic AI generation in CI.
+
+## Flow and integrations
+
+```mermaid
+flowchart TD
+    DEV["Developer + coding agent: maintain descriptions"] --> GIT["Git: code, suite configuration, catalog"]
+    GIT --> CI["CI checks out tested revision"]
+    CI --> DISC["discover + catalog check"]
+    DEV --> LOCAL["Optional local engine use"]
+    DISC --> SELECT["select: mandatory rules + semantic judgments"]
+    LOCAL --> SELECT
+    SELECT <-->|"Selected change context and test evidence"| JEV["Jev API"]
+    STORE["Trusted CI cache artifacts"] --> SELECT
+    SELECT --> FROZEN["Frozen selection.json"]
+    FROZEN --> RUN["run: full suite in shadow mode"]
+    RUN --> RUNNERS["PHPUnit / Behat; Playwright next"]
+    RUNNERS --> REPORT["record + report: outcomes, misses, time, costs"]
+    REPORT --> STORE
+    REPORT --> DEV
+```
+
+`discover`, `catalog`, and `mapping import-phpunit` are implemented. `select`, `run`, `record`, shared cache transport, and TIA reports are delivery tasks below. Existing `rank`, `evaluate`, and `report` retain their legacy ranking contracts.
+
+Git/hosting tooling supplies cumulative PR/MR changes, tested revisions, and outcome artifacts. CI retains containers, services, isolation, matrices, and scheduling. Faultline does not replace hosting platforms or the CI scheduler.
+
+## Stage 1 — Shared catalog and native runner contracts
 
 Implemented:
 
-- The indexing workflow teaches the agent to read repository instructions, discover actual executable tests, use readable labels/source, inspect necessary setup, and describe only demonstrated behavior.
-- Generic profile contract: required `id`, `source`, `description`; optional `runner`, `locator`, `metadata`, and `context_sources`. The helper computes source hashes and records skill/agent provenance.
-- Incremental indexing preserves unchanged entries, replaces changed/new entries, and removes tests omitted from a complete rediscovered inventory. Full-file hashes conservatively invalidate sibling cases. Declared setup/helper sources also affect hashes.
-- `index-status`, `index show`, and `explain-test` make the catalog inspectable. Discovery completeness and undeclared dependencies remain the agent's responsibility.
+- Versioned configuration and generic JSON discovery; native PHPUnit 9.6 list XML plus Composer class-map discovery, and Behat 3.29 dry-run JUnit discovery.
+- File units preserve PHPUnit classes/datasets, Behat scenario/outline members, and configured matrix variants. Runner identity is authoritative; agents cannot invent it. Unverified runner versions require a generic bridge or full execution.
+- `discover`, `catalog show/check/sync/import`, explicit review provenance, source/context hashing, additions/removals, and migration from the legacy local catalog. Incomplete discovery cannot replace a catalog.
+- Shared descriptions can be reused across checkouts without inference. Description freshness and shared execution inputs are recorded separately.
+- `mapping import-phpunit` reads native test-attributed XML and hashes source reports. It imports positive relationships; no custom PHP parser or coverage instrumentation. Unknown identities remain visible and absent relationships do not imply irrelevance.
 
-Acceptance: demonstrate complete discovery and incremental updates in a real repository; spot-check descriptions and parameterized/duplicate-name identities. The offline fixture tests cover preservation, changes, removals, invalid paths, and stale inputs. Real-repository semantic quality is still to be validated.
+Validation completed: offline reuse, freshness, incomplete discovery, migration, variant identities, malformed inputs, native parser fixtures, and mapping tests. Isolated smoke tests used installed PHPUnit 9.6.34, Behat 3.29.0, and php-code-coverage 9.2.32; Xdebug produced per-test line mappings. These were synthetic tests, not a real application pilot.
 
-## Stage 2 — Fixed Jev evaluation and reproducible ranking
+Remaining acceptance: validate a complete real suite inventory and reviewed descriptions at the chosen PR revision, verify native IDs against actual execution/results, bound discovery/indexing effort, and qualify remote-process coverage before using it. Extend the verified runner-version range through conformance fixtures. Behat HTTP coverage requires evidence from the application-serving process; local CLI coverage is insufficient. See [the command and data contracts](skills/faultline/references/shared-catalog.md).
+
+## Stage 2 — Selection engine and execution
+
+- Normalize the cumulative PR/MR diff and exact tested snapshot, including synthetic merge revisions. Freeze base/head, configuration/catalog/policy versions, evidence hashes, selected/omitted units, reasons, fallbacks, prerequisites, timings, and usage in immutable `selection.json`.
+- Add `select`, `run --selection … --suite …`, and `record`. Reject revision/configuration/catalog/selector mismatches before execution. Preserve runner exit status. Never interpret missing, empty, invalid, or interrupted decisions as permission to run zero tests.
+- Mandatory execution includes changed/new tests, must-run rules, positive dependency/coverage matches, relevant setup changes, unresolved failures, and uncertain units. Missing relationships are not negative evidence. Bound unknown changes by explicit scope; unbounded unknowns execute every suite.
+- Use native filtering at file/class granularity, including all associated datasets, scenarios, and variants. Validate exact selectors against discovery; unsupported filters or unresolved prerequisites widen execution. CI supplies services, containers, and scheduling.
+- Default to shadow mode: freeze the proposal, then run everything. Reviewed experimental opt-in may omit only complete/current units with `P(irrelevant) >= 0.95`. This is an experimental threshold, not a calibrated safety guarantee.
+- On missing credentials, Jev errors, invalid responses/selectors, insufficient evidence, expired/unavailable trusted state, or exhausted budgets, execute the affected suite fully and record why.
+- Retain the five-level evaluator (`irrelevant`, `weak`, `plausible`, `strong`, `direct`), probabilities, expected 0–4 score, deterministic identity tie-breaks, and pinned model/evaluator versions. Benchmark evaluator changes separately.
+- Verify Jev's multi-question integration and batch several judgments against shared change context. Bound batch bytes/units, requests including retries, and elapsed time; validate each answer independently. Keep existing serial pacing, bounded retry/backoff, interruption recovery, and credential-safe errors.
+- Cache actual complete inference inputs: selected change text, test evidence, full batch context, question/schema, and model/evaluator versions. PR numbers, timestamps, and run metadata are provenance outside inference identity. Similar descriptions do not justify reuse across changed inputs.
+- Share immutable caches using existing CI artifacts. Only trusted jobs publish reusable evidence; PR jobs cannot overwrite trusted caches. Missing artifacts are cache misses. Integrity hashes detect modification, not malicious producers; enforce producer trust outside those hashes.
+- Keep `TYPESAFE_API_KEY` resolution from environment, `.faultline/.env`, then root `.env`. No credentials in evidence; read them only for live evaluation. No embeddings, lexical top-K exclusion, vector database, or hosted service initially.
+
+**Milestone 1:** inspectable indexing and cached ranking of a real cumulative change, with reproducible native identities, shared descriptions, frozen decisions, visible fallbacks, and verified execution behavior. A second checkout reuses descriptions and identical inference inputs without new indexing or calls.
+
+## Stage 3 — Prospective shadow pilot
+
+- Start with one ordinary PR/MR. Preserve existing full execution; do not scan a hundred PRs or trigger historical reruns by default. Resolve exact tested revisions/attempts with bounded, cached hosting calls.
+- Freeze decisions before outcomes exist. Collect green runs, regressions, flakes, infrastructure failures, and incomplete/expired runs. Passing retries are not automatically flakes; CI downtime is not a product regression.
+- Use the existing test runner's result/coverage producers. Qualify coverage-driver overhead and remote application attribution separately. Importer provenance must include source revision, runner variant, scope, and collection completeness.
+- Match outcome identities exactly. A known failure missing from the catalog excludes the corresponding recall claim. Unexecuted tests are unknown, never passing. Current-catalog retrospective cases disclose suite drift; retain each exact catalog snapshot.
+- Compare full execution, deterministic dependency/path rules, lexical selection, Jev, and the hybrid at equal execution budgets or observed recall. Preserve existing seeded-random and verified historical-order ranking baselines. Keep tuning cases apart from later assessment cases.
+- Produce Markdown and JSON reports after a single case; subsequent cases accumulate without repeated downloads/inference. Publish denominators, exclusions, and uncertainty. Repeated attempts are not independent regression cases.
+- Failing-change recall measures whether any regression is detected in a change. Failing-test recall measures the fraction of known failing tests included. Coverage is reported only from instrumentation. Savings subtract selection, setup, and audit overhead from avoided execution.
+- Report Jev usage, description/indexing effort, selection latency, execution minutes, jobs/setup avoided, and audit overhead separately. Use dated configurable pricing; external agent costs remain unknown unless supplied. Serial duration sums are estimates, not parallel CI wall-clock measurements.
+- Aggregate compatible policies across ordinary catalog evolution while preserving per-case evidence. Investigate misses after freezing and evaluating; do not rewrite evidence or retroactively tune the original prediction.
+
+**Milestone 2:** reproducible evaluation of real cases with baselines, traceable classifications, reports, and limitations. One PR should yield an understandable report; a second case should join the aggregate without repeating unchanged work. A green run cannot establish regression recall or safe omission.
+
+## Stage 4 — Experimental selection
+
+- Require per-suite reviewed configuration and explicit maintainer opt-in. No automatic promotion, including when evidence remains limited.
+- Preserve full post-merge runs and a deterministic, outcome-independent 10% sample of PR snapshots. Include audit cost in savings.
+- An observed missed regression suspends that suite's selection through trusted CI state until reviewed. Missing suspension state means full execution. Post-merge detection does not establish pre-merge safety.
+- Validate setup dependencies, exact selectors, additions/removals, stale evidence, failure-state persistence, budgets, credentials, cache trust, and interruptions. Every incomplete decision must produce a visible full-execution fallback.
+
+## Stage 5 — Extension and distribution
+
+Publish versioned CLI/plugin releases, native conformance fixtures, and extension contracts. Add Playwright through the same contract; browser-only coverage does not imply backend coverage. Qualify existing producers before writing new instrumentation. Agent installations and CI use the same Python implementation; scripts and references remain self-contained inside the skill.
+
+Keep local agent support alongside CI validation. Consider additional runner versions, native dependency/coverage producers, and better cost models after measuring the initial pipeline. Embeddings, hosted services, retrieval exclusions, and alternative evaluators remain deferred experiments with independent benchmarks.
+
+## Existing ranking and historical contracts to preserve
+
+The legacy engine and skill already implement the following. Their offline tests remain regressions for the shared-engine work; they do not establish that the new selection pipeline is complete.
+
+### Existing Jev ranking — Fixed Jev evaluation and reproducible ranking
 
 Implemented:
 
@@ -34,9 +106,9 @@ Implemented:
 
 Acceptance: inspect rankings for several real changes; verify unrelated tests score low and relevant cross-behavior tests appear high. Live service access and ranking quality remain unverified. Offline tests exercise the HTTP contract, invalid probabilities, interruption/reuse, request limits, model versions, and credential-safe errors.
 
-**Milestone 1:** an installable self-contained skill, inspectable incremental catalogs, one-change semantic ranking, probability evidence, deterministic order, and local caches. Code and skill packaging are implemented; real-change validation is the next experiment.
+**Legacy ranking milestone:** an installable self-contained skill, inspectable incremental catalogs, one-change semantic ranking, probability evidence, deterministic order, and local caches. Code and skill packaging are implemented; real-change validation is the next experiment.
 
-## Stage 3 — Historical evidence without hindsight
+### Existing historical collection — Historical evidence without hindsight
 
 Implemented as skill workflow and structured contracts:
 
@@ -54,7 +126,7 @@ Hosting calls are the agent's responsibility: serial authenticated requests, loc
 
 Acceptance: one real PR/MR with multiple commits and attempts produces separate applicable predictions and traceable outcome records. Missing/expired artifacts, CI downtime, and incorrect revision mappings remain exclusions or limitations, not false successes.
 
-## Stage 4 — Evaluation and reports in the same interaction
+### Existing evaluation — Evaluation and reports in the same interaction
 
 Implemented:
 
@@ -69,18 +141,4 @@ Implemented:
 
 Acceptance: a real single-PR request ends with an understandable case report and its evidence; a second case joins the aggregate without repeated downloads or inference. Offline tests cover this pipeline and report generation, including no eligible regressions, reruns, wrong revisions, missing durations, multiple PRs, and evaluator separation.
 
-**Milestone 2:** reproducible historical evaluation with evidence-based labels, baselines, and local reports. The deterministic pipeline is implemented and tested with synthetic fixtures. Real-history usefulness remains to be established.
-
-## Distribution and validation
-
-- The Skills CLI installs `skills/faultline/`, including all scripts and references. A standalone copied bundle is tested with Python third-party packages disabled. The custom Python installer has been removed.
-- Native Codex and Claude Code manifests and repository marketplace catalogs wrap the same skill. A portable Agent Plugins manifest identifies the package. Python package installation remains optional contributor tooling. Remote installs require the packaging revision to be pushed; public-directory publishing is separate future work.
-- The README explains the project; `docs/install.md` documents setup and invocation. Schema/behavior details live with the skills.
-- No implementation test uses a live Jev key or downloads private repository history.
-- Next: install into a separate repository, review the index, run an outcome-blind real-change ranking, and evaluate the resulting report. Record failures of the workflow before expanding the sample.
-
-## Success criteria and later work
-
-Continue only if relevant failures consistently move earlier and semantic ranking adds value over simple baselines. Keep tuning separate from future untouched assessment cases; do not claim general success from a hand-selected case or a green run. A negative result is useful.
-
-If evidence supports it, later stages can introduce full-suite execution ordering, a fast feedback lane with a complete-suite backstop, explicit test budgets, and eventually selective validation. Shared histories, hosted/MCP services, embedding baselines, candidate retrieval, historical-revision indexing, and additional coverage/runtime/reliability signals remain future work. Agent and CI integrations should consume the same inspectable catalog and ranking evidence.
+**Legacy evaluation milestone:** reproducible historical evaluation with evidence-based labels, baselines, and local reports. The deterministic pipeline is implemented and tested with synthetic fixtures. Real-history usefulness remains to be established.

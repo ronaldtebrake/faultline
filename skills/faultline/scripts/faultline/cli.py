@@ -1,4 +1,4 @@
-"""Small deterministic CLI, normally called by the two Faultline Agent Skills."""
+"""Deterministic CLI shared by Faultline agent workflows and local tooling."""
 from __future__ import annotations
 
 import argparse
@@ -11,6 +11,7 @@ from .evaluation import evaluate
 from .index import build_index, index_status, load_profiles, source_hash
 from .jev import LEVELS, validate_answer
 from .report import aggregate, regenerate
+from .tia.cli import COMMANDS as TIA_COMMANDS, add_commands, dispatch
 from .workflow import load_prediction, prediction_path, rank
 
 
@@ -44,6 +45,7 @@ def parser():
     evaluation.add_argument('--outcomes', required=True, type=Path)
     report = commands.add_parser('report', help='Regenerate one case report or aggregate all saved cases, offline')
     report.add_argument('--prediction')
+    add_commands(commands)
     return cli
 
 
@@ -51,6 +53,10 @@ def main(argv=None):
     args = parser().parse_args(argv)
     store = Store(repo_root(args.root))
     try:
+        if args.command in TIA_COMMANDS:
+            result = dispatch(store, args)
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+            return 2 if result.get('complete') is False else 0
         config = store.config()
         if args.command == 'init':
             store.initialize()

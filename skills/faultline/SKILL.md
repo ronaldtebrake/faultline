@@ -7,9 +7,11 @@ description: Discover and describe a repository's tests, build or update a Fault
 
 You gather repository evidence and interpret findings. Jev supplies semantic judgments. The bundled code owns questions, probability validation, scoring, cache identity, and measurements. Never replace Jev scores or reorder its ranking with your own judgment.
 
-For indexing requests, read [the indexing workflow](references/indexing.md) and [index contract](references/index-schema.md). For ranking or analysis, follow the flow below. For saved reports, use `report` without new inference.
+For shared-catalog setup or a repository containing `faultline.json`, read [the shared-catalog workflow](references/shared-catalog.md). Use native discovery and review only changed descriptions; never regenerate a shared catalog with AI in CI. These new commands do not yet implement selection or test execution. The legacy ranking flow below still consumes `.faultline/index.jsonl` or explicit generic profiles; it does not automatically consume the new shared catalog.
 
-Resolve `<this-skill>` to the absolute directory containing this installed SKILL.md; never assume it is inside the target repository or writable. Keep generated data in the target repository, not the installed skill. Use `python3 "<this-skill>/scripts/run.py" --root "<repo>" ...` (Python 3.10+, no third-party dependencies). An installed `faultline` command is equivalent. Read [the evaluator contract](references/evaluator.md) when preparing a change. For retrospective analysis also read [the history/report contract](references/report.md).
+For legacy indexing requests, read [the indexing workflow](references/indexing.md) and [index contract](references/index-schema.md). For ranking or analysis, follow the flow below. For saved reports, use `report` without new inference.
+
+Resolve `<this-skill>` to the absolute directory containing this installed SKILL.md; never assume it is inside the target repository or writable. Keep generated data in the target repository, not the installed skill. Use `python3 "<this-skill>/scripts/run.py" --root "<repo>" ...` (Python 3.10+, no third-party Python dependencies; native discovery requires the configured runners). An installed `faultline` command is equivalent. Read [the evaluator contract](references/evaluator.md) when preparing a change. For retrospective analysis also read [the history/report contract](references/report.md).
 
 ## Normal single-change flow
 
