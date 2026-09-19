@@ -1,6 +1,6 @@
 {
   "name": "faultline",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Agent-native semantic test ranking with Jev.",
   "author": {
     "name": "ronaldtebrake",

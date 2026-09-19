@@ -18,7 +18,7 @@ from .workflow import load_prediction, prediction_path, rank
 def parser():
     cli = argparse.ArgumentParser(prog='faultline', description='Deterministic core for the Faultline Agent Skills')
     cli.add_argument('--root', default='.', help='Target repository (defaults to the current Git root)')
-    cli.add_argument('--version', action='version', version='faultline 0.5.0')
+    cli.add_argument('--version', action='version', version='faultline 0.6.0')
     commands = cli.add_subparsers(dest='command', required=True)
     init = commands.add_parser('init', help='Initialize local storage and a reusable graph baseline for a configured repository')
     init.add_argument('--baseline', default='HEAD', help='Git revision to index once, typically the default branch')

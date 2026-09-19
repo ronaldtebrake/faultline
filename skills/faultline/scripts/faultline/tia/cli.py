@@ -44,6 +44,7 @@ def add_commands(commands):
     select.add_argument('--native', action='store_true', help='Opt into runner discovery in a prepared application environment')
     select.add_argument('--output', type=Path)
     benchmark = commands.add_parser('benchmark', help='Freeze CodeGraph, Jev, and graph-enriched Jev proposals without running tests')
+    benchmark.add_argument('--evidence-mode', choices=['whole', 'file-pairs'], default='whole', help='Whole-input reference, or explicit bounded changed-file comparisons without setup bodies')
     benchmark.add_argument('--base', required=True)
     benchmark.add_argument('--head', default='HEAD')
     benchmark.add_argument('--id')
@@ -124,7 +125,7 @@ def dispatch(store, args):
         from .benchmark import benchmark
         return benchmark(store, args.base, args.head, identifier=args.id, base_graph=args.base_graph, head_graph=args.head_graph,
                          build_graphs=not args.no_build, prepare=args.prepare, output=args.output,
-                         max_requests=args.max_requests, selection_seconds=args.selection_seconds, title=args.title, description=args.description)
+                         max_requests=args.max_requests, selection_seconds=args.selection_seconds, title=args.title, description=args.description, evidence_mode=args.evidence_mode)
     if args.command == 'benchmark-report':
         if args.outcomes:
             from .benchmark_results import assess

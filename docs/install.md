@@ -81,7 +81,7 @@ CodeGraph is required for indexing. Your project's test runners and application 
 
 ## Updating an existing installation
 
-Reinstall/update the skill or plugin using the same method used above, then start a new agent session so it reads the new instructions. For a standalone checkout installation, reinstall from that checkout. Confirm the active engine with `faultline --version`, or `python3 "<installed-skill>/scripts/run.py" --version`: this source version is **0.5.0**. A Git-based installation receives it only after these changes are published to that Git revision.
+Reinstall/update the skill or plugin using the same method used above, then start a new agent session so it reads the new instructions. For a standalone checkout installation, reinstall from that checkout. Confirm the active engine with `faultline --version`, or `python3 "<installed-skill>/scripts/run.py" --version`: this source version is **0.6.0**. A Git-based installation receives it only after these changes are published to that Git revision.
 
 Version 0.3.0 uses a new graph artifact schema. Re-run `init --baseline <default-branch>` or import a baseline produced by this version. Old catalogs are ignored by the graph workflow; old artifacts are not overwritten.
 
@@ -90,3 +90,5 @@ Version 0.3.0 uses a new graph artifact schema. Re-run `init --baseline <default
 An `SSL: CERTIFICATE_VERIFY_FAILED` error concerns Python's HTTPS trust store, not Git SSH or your Jev key. Faultline uses verified TLS and honors `SSL_CERT_FILE` / `SSL_CERT_DIR`. Where Python's certificate bundle is missing, install `certifi` in the **same Python environment that runs the skill**, for example `python3 -m pip install certifi` inside its virtual environment. Faultline automatically supplements default roots with that bundle unless explicit certificate paths are configured. Use an organization-approved CA bundle for enterprise proxies. Never disable certificate verification or edit installed skill copies as a workaround.
 
 Version 0.5.0 adds the three-way reference benchmark. Existing compatible graph artifacts and selection answer caches remain readable. Benchmark requests have a separate input contract, so their answers cannot be substituted for earlier selection judgments. New answers are stored in one SQLite file; identical benchmark inputs resume from that cache.
+
+Version 0.6.0 reports blocked preparation before inference and adds the explicit `--evidence-mode file-pairs` experiment. If preparation reports zero eligible targets, do not run the same blocked inputs again. See [bounded benchmark inputs](../skills/faultline/references/benchmark.md#when-whole-inputs-do-not-fit) for the evidence scope and remaining limits.

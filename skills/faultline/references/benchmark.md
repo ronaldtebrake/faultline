@@ -10,7 +10,7 @@ Configure test source patterns and variants in `faultline.json` using [the setup
 faultline benchmark --base <actual-base> --head <tested-head> --prepare --max-requests 100
 ```
 
-Preparation builds fresh graphs for missing revisions and estimates uncached work for both Jev approaches. It invokes neither Jev nor a test runner. The estimate lists oversized or unreadable targets separately; they are not silently removed. The example request ceiling is shared across both approaches and is not a promise that 100 requests can finish the case.
+Preparation builds fresh graphs for missing revisions and estimates uncached work for both Jev approaches. Inspect `preparation.status`, `preparation.blockers`, `preparation.eligible_targets`, and `graph_builds`. Exit 2 means the planned comparison is incomplete: graph failures, oversized evidence, incomplete inventory, or insufficient requests are visible before inference. A zero-request estimate with zero eligible targets is blocked, not a free completed benchmark. It invokes neither Jev nor a test runner. The estimate lists oversized or unreadable targets separately; they are not silently removed. The example request ceiling is shared across both approaches and is not a promise that 100 requests can finish the case.
 
 When live inference is authorized within the configured or user-specified budget:
 
@@ -26,6 +26,28 @@ The reference sends whole supplied diffs, test files, and source matched by each
 Reports distinguish configured source targets from native test cases. A file may contain datasets or scenarios. Native runners are unnecessary for analysis. Both Jev approaches assess all readable targets, including mandatory tests and sources without graph paths. Shared mandatory rules and prerequisites affect selections; positive structural hints alone do not force either semantic policy to select a target.
 
 The command writes one immutable JSON case and one Markdown report in `.faultline/benchmarks/`. `--output <fresh-path.json>` selects another location without creating a second canonical copy. Exit 2 means an incomplete comparison was saved. Exit 1 indicates an error that prevented normal completion. Reports include exact versions, input evidence, request identities, probabilities, and limitations. The reference is an experimental comparator, not ground truth.
+
+## When whole inputs do not fit
+
+The default `--evidence-mode whole` preserves the whole-input comparator. Smaller batches cannot make a single oversized change/test/setup combination fit. Raising the request count cannot repair that failure either.
+
+Use `--evidence-mode file-pairs` for a separately labeled experiment:
+
+```bash
+faultline benchmark --base <actual-base> --head <tested-head> \
+  --evidence-mode file-pairs --prepare --max-requests 100
+
+faultline benchmark --base <actual-base> --head <tested-head> \
+  --evidence-mode file-pairs --max-requests 100 --selection-seconds 120
+```
+
+This mode groups complete `diff --git` sections into bounded change windows. Every eligible test is compared with every window. Each Jev question carries its own whole test source and, for the hybrid approach, the bounded file/symbol relationship context. Questions share the change state. Setup source identities are retained; their implementation bodies are not sent. Whole-input and file-pairs judgments have separate contracts and cache identities.
+
+A target that cannot fit with even one complete changed-file section remains unassessed; no file or diff section is split at an arbitrary byte offset. A target is fully assessed only when all its planned windows return valid answers. Partial targets remain would-run. The diagnostic score is the strongest observed window judgment. Proposed omission requires every window's irrelevant probability to meet the policy threshold. This is not a calibrated cumulative-change probability: interactions across windows and unprovided setup implementations can be missed. Treat this as a distinct experiment, not a complete substitute for whole-input evidence.
+
+A large suite may still need more than 100 requests. Preparation exposes that cost; it never raises the ceiling or authorizes repeated runs. Oversized test files remain blocked regardless of the request allowance. Keep the comparison partial until its declared evidence requirements are actually satisfied.
+
+Graph snapshot preparation checks Git object sizes before exporting files. If it exceeds the configured local graph budget, the error names required and allowed bytes/files. Review `graph.max_source_bytes` and `graph.max_files` against the available local resources, or supply compatible exact-revision artifacts. Graph resource limits and Jev request limits are separate. Do not drop suites or source paths merely to clear a warning.
 
 ## CodeGraph without Jev
 

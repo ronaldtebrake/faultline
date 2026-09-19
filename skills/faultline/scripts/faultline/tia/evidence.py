@@ -33,7 +33,14 @@ class GitSources:
                 self.files[name.decode()] = {'mode': mode.decode(), 'oid': oid.decode(), 'size': int(size)}
 
     def glob(self, patterns):
-        return sorted(p for p in self.files if any(match(p, pattern) for pattern in patterns))
+        # A Git snapshot is immutable; shared setup patterns need one tree scan,
+        # not another scan for every target in a large suite.
+        if not hasattr(self, '_glob_cache'):
+            self._glob_cache = {}
+        key = tuple(patterns)
+        if key not in self._glob_cache:
+            self._glob_cache[key] = tuple(sorted(p for p in self.files if any(match(p, pattern) for pattern in patterns)))
+        return list(self._glob_cache[key])
 
     def read(self, path):
         if path in self.cache:

@@ -79,6 +79,8 @@ The requirements below span the implemented shadow path and future selective exe
 
 ## Reference benchmark before optimization
 
+Implemented: `benchmark` preparation reports graph and input-size blockers before inference. An explicit `file-pairs` experiment handles changes that exceed whole-input limits by grouping complete changed-file sections against whole test files; setup bodies are outside its evidence scope. It keeps all targets eligible, preserves incomplete cases, and retains its own contract and cache identity. Its value and cross-window limitations require separate measurement.
+
 Implemented: `benchmark` freezes CodeGraph-only, Jev source/diff, and graph-enriched Jev policies against one change and inventory. It retains whole supplied inputs, shares an inference budget across the Jev approaches, scores every readable target, and labels oversized evidence incomplete. Structural hints are evidence for Jev; common mandatory rules and prerequisites are applied separately. A CodeGraph-only report is available without inference. New answer caches use one SQLite database; each benchmark has one frozen JSON case and Markdown report.
 
 `graph build --fresh` publishes a separate exact-revision artifact without incremental seeding. A main-branch CI publisher example is provided, while artifact restoration and producer authentication remain the consuming CI's responsibility. Each PR still requires its actual diff base and tested-head graph. Fresh-versus-incremental equivalence is an experiment, not an assumption.

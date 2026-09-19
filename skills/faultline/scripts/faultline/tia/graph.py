@@ -106,7 +106,23 @@ def artifact_path(store, config, rev):
     return store.path / 'graphs' / key
 
 
+def snapshot_size(root, rev, settings):
+    """Check tracked regular-file sizes before exporting an expensive archive."""
+    from .evidence import GitSources
+    entries = GitSources(root, rev).files
+    regular = [entry for entry in entries.values() if entry['mode'].startswith('100')]
+    total = sum(entry['size'] for entry in regular)
+    count = len(regular)
+    if total > settings['max_source_bytes'] or count > settings['max_files']:
+        raise FaultlineError(
+            f"Graph snapshot needs {total:,} source bytes and {count:,} files; configured limits are "
+            f"{settings['max_source_bytes']:,} bytes and {settings['max_files']:,} files. "
+            "Review graph.max_source_bytes/max_files in faultline.json before retrying; no archive was exported.")
+    return {'source_bytes': total, 'source_files': count}
+
+
 def extract(root, rev, target, settings):
+    snapshot_size(root, rev, settings)
     archive = target.parent / 'source.tar'
     with archive.open('wb') as out:
         p = subprocess.run(['git', '-C', str(root), 'archive', '--format=tar', rev], stdout=out, stderr=subprocess.PIPE)
@@ -127,7 +143,7 @@ def extract(root, rev, target, settings):
                 raise FaultlineError('Generated Faultline/CodeGraph state must not be committed')
             total += member.size
             if total > settings['max_source_bytes'] or len(manifest) >= settings['max_files']:
-                raise FaultlineError('Source snapshot exceeds the configured graph budget')
+                raise FaultlineError(f"Extracted graph snapshot exceeds graph.max_source_bytes={settings['max_source_bytes']} or graph.max_files={settings['max_files']}")
             dest = target / path
             dest.parent.mkdir(parents=True, exist_ok=True)
             with tar.extractfile(member) as inp, dest.open('wb') as out:

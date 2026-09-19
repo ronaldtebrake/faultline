@@ -32,9 +32,10 @@ class BenchmarkTests(unittest.TestCase):
             def request(inner, url, payload, **kw):
                 engine.budget.take()
                 calls.append(payload)
-                hybrid = any(t['graph_evidence'] for t in payload['state']['tests'])
+                targets = [q['instructions']['test'] for q in payload['questions'].values()] if isinstance(next(iter(payload['questions'].values()))['instructions'], dict) else payload['state']['tests']
+                hybrid = any(t.get('graph_evidence') for t in targets)
                 answers = {}
-                for i, t in enumerate(payload['state']['tests']):
+                for i, t in enumerate(targets):
                     level = ('strong' if t['source'].endswith('ATest.php') else 'weak') if hybrid else ('strong' if t['source'].endswith('BTest.php') else 'irrelevant')
                     answers[f'q{i}'] = fixture.answer(level)
                 return {'model': config['model'], 'answers': answers, 'usage': {'input_tokens': 20, 'output_tokens': 0}}, {}
@@ -265,6 +266,95 @@ class BenchmarkTests(unittest.TestCase):
         self.assertEqual([], calls)
         case = checked(Path(result['json']))
         self.assertEqual(2, len(case['policies']['jev']['would_run']))
+
+
+    def test_blocked_preparation_exits_nonzero_and_exposes_input_sizes(self):
+        from faultline.tia.selection import change
+        context = change(self.root, self.base, self.head)
+        context['diff'] = 'diff --git a/large.txt b/large.txt\n' + '+' + 'x' * 70000
+        with patch('faultline.tia.benchmark.change', return_value=context), patch('faultline.tia.batch.api_key', side_effect=AssertionError('No API')):
+            result = benchmark(self.store, self.base, build_graphs=False, prepare=True)
+            self.assertFalse(result['complete'])
+            self.assertFalse(result['preparation']['ready'])
+            self.assertEqual({'jev': 0, 'hybrid': 0}, result['preparation']['eligible_targets'])
+            self.assertGreater(result['preparation']['input_sizes']['diff_bytes'], 70000)
+            with patch('builtins.print'):
+                self.assertEqual(2, main(['--root', str(self.root), 'benchmark', '--base', self.base, '--no-build', '--prepare']))
+
+    def test_file_pair_questions_share_only_change_and_keep_whole_tests(self):
+        result, calls = self.run_benchmark(evidence_mode='file-pairs')
+        case = checked(Path(result['json']))
+        self.assertEqual('reference-file-pairs-v1', case['contract'])
+        self.assertTrue(case['complete'])
+        self.assertEqual(2, len(calls))
+        for request in calls:
+            self.assertTrue(all(set(t) == {'id', 'source'} for t in request['state']['tests']))
+            for question in request['questions'].values():
+                target = question['instructions']['test']
+                self.assertEqual((self.root / target['source']).read_text(), target['source_evidence']['text'])
+                self.assertFalse(target['execution_context']['setup_bodies_supplied'])
+        for arm in ('jev', 'hybrid'):
+            self.assertEqual(2, len(case['policies'][arm]['judgments']))
+            self.assertTrue(all(row['evidence_complete'] for row in case['policies'][arm]['judgments'].values()))
+
+    def test_file_pairs_keep_every_changed_section_and_resume_exact_inputs(self):
+        from faultline.tia.selection import change
+        context = change(self.root, self.base, self.head)
+        sections = [f'diff --git a/src/Part{i}.php b/src/Part{i}.php\n@@ -1 +1 @@\n-' + 'a' * 1800 + '\n+' + 'b' * 1800 + '\n' for i in range(20)]
+        context['diff'] = ''.join(sections)
+        with patch('faultline.tia.benchmark.change', return_value=context):
+            first, calls = self.run_benchmark(evidence_mode='file-pairs', limit=1)
+            partial = checked(Path(first['json']))
+            self.assertFalse(first['complete'])
+            self.assertEqual(1, len(calls))
+            self.assertEqual(2, len(partial['policies']['jev']['would_run']))
+            result, resumed_calls = self.run_benchmark(evidence_mode='file-pairs')
+        case = checked(Path(result['json']))
+        self.assertTrue(result['complete'])
+        self.assertGreater(len(resumed_calls), 0)
+        for arm in ('jev', 'hybrid'):
+            for row in case['policies'][arm]['judgments'].values():
+                spans = sorted((part['change_window']['start_char'], part['change_window']['end_char']) for part in row['parts'])
+                self.assertEqual(0, spans[0][0])
+                self.assertEqual(len(context['diff']), spans[-1][1])
+                self.assertTrue(all(a[1] == b[0] for a, b in zip(spans, spans[1:])))
+                self.assertEqual(context['diff'], ''.join(context['diff'][start:end] for start, end in spans))
+                self.assertTrue(all(context['diff'][start:end].startswith('diff --git ') for start, end in spans))
+        for request in calls + resumed_calls:
+            self.assertLessEqual(len(json.dumps(request, ensure_ascii=False).encode()), self.config['evaluator']['max_batch_bytes'])
+            state = len(json.dumps(request['state'], ensure_ascii=False).encode())
+            longest = max(len(json.dumps(q, ensure_ascii=False).encode()) for q in request['questions'].values())
+            self.assertLessEqual(state + longest, self.config['evaluator']['max_state_bytes'])
+
+    def test_file_pairs_do_not_read_bulk_setup_implementations(self):
+        (self.root / 'setup.php').write_text('<?php /*' + 'setup content ' * 25000 + '*/')
+        self.raw['suites'][0]['description_inputs'] = ['setup.php']
+        write_json(self.root / 'faultline.json', self.raw)
+        self.commit()
+        self.head = self.git('rev-parse', 'HEAD').strip()
+        self.config = load_config(self.root)
+        self.publish(self.head)
+        result, calls = self.run_benchmark(evidence_mode='file-pairs')
+        # The large setup addition is a single oversized changed-file section:
+        # it must stay blocked rather than being silently excluded from the diff.
+        self.assertFalse(result['complete'])
+        self.assertEqual([], calls)
+        with patch('faultline.tia.benchmark.change', return_value={
+                'id': 'fixture', 'base': self.base, 'head': self.head, 'changed_files': ['src/Policy.php'],
+                'diff': 'diff --git a/src/Policy.php b/src/Policy.php\n@@ -1 +1 @@\n-true\n+false\n', 'title': '', 'description': ''}):
+            result, calls = self.run_benchmark(evidence_mode='file-pairs')
+        self.assertGreater(len(calls), 0)
+        self.assertTrue(all('setup content ' not in json.dumps(request) for request in calls))
+        self.assertTrue(all(q['instructions']['test']['execution_context']['setup_source_count'] == 1 for request in calls for q in request['questions'].values()))
+
+    def test_graph_budget_is_checked_before_archive_export(self):
+        from faultline.tia.graph import extract
+        settings = {**self.config['graph'], 'max_source_bytes': 1}
+        with patch('faultline.tia.graph.subprocess.run', wraps=__import__('subprocess').run) as invoked:
+            with self.assertRaisesRegex(FaultlineError, 'no archive was exported'):
+                extract(self.root, self.head, self.root / 'snapshot', settings)
+        self.assertFalse(any('archive' in call.args[0] for call in invoked.call_args_list))
+        self.assertFalse((self.root / 'source.tar').exists())
 
     @unittest.skipUnless(os.environ.get('FAULTLINE_CODEGRAPH'), 'Requires the pinned CodeGraph executable')
     def test_fresh_baselines_do_not_seed_from_an_existing_graph(self):
