@@ -1,4 +1,6 @@
-# Shared catalogs and native mapping
+# Optional shared catalogs and native mapping
+
+The default CodeGraph/Jev flow scores actual test source without requiring this catalog or native discovery. Use annotations when they improve evidence; catalog review is not a prerequisite for `select`.
 
 Use this workflow when the repository has `faultline.json`, or when setting up shared test descriptions for the TIA engine. For CodeGraph artifacts, selection, execution, and reports, follow [the graph workflow](graph-workflow.md). These commands make no Jev requests. Default discovery lists configured source files without invoking runners or application code. Only explicit `discover --native` / `select --native` enrichment and execution-time validation invoke runner bootstraps and data providers.
 
@@ -48,7 +50,7 @@ faultline catalog sync
 faultline catalog show
 ```
 
-`discover` lists files matching each suite's `sources` globs. These are provisional file targets, not a claim that every match is executable. It saves a sealed inventory under `.faultline/inventories/`. `catalog sync` creates deterministic, **unreviewed** drafts using source paths, preserves current reviewed records, and removes records absent from a complete source inventory. Empty configured source sets are reported as `no_configured_source_targets` and cannot replace a catalog. Migrate existing descriptions with `catalog sync --legacy .faultline/index.jsonl`; migrated descriptions still need review because execution-unit granularity may differ.
+`discover` lists files matching each suite's `sources` globs. These are provisional file targets, not a claim that every match is executable. It saves a sealed inventory under `.faultline/inventories/`. `catalog sync` creates deterministic, **unreviewed** drafts using source paths, preserves current reviewed records, and removes records absent from a complete source inventory. Empty configured source sets are reported as `no_configured_source_targets` and preserve their existing catalog records while other suites can sync. Migrate existing descriptions with `catalog sync --legacy .faultline/index.jsonl`; migrated descriptions still need review because execution-unit granularity may differ.
 
 Read tests and required setup, then import only the changed descriptions:
 
@@ -68,7 +70,7 @@ faultline catalog import --input reviewed.json --reviewer maintainer
 faultline catalog check
 ```
 
-Each catalog command enumerates source paths before modifying/checking records, without invoking runners. Import checks the provisional file identity and freshness, records the reviewer, and hashes declared context sources. It validates the record structure, not the truth of its prose. `catalog check` exits 2 when any record is missing, stale, unreviewed, or discovery is incomplete. CI should surface that condition and run fully, never generate descriptions automatically.
+Each catalog command enumerates source paths before modifying/checking records, without invoking runners. Import checks the provisional file identity and freshness, records the reviewer, and hashes declared context sources. It validates the record structure, not the truth of its prose. `catalog check` exits 2 when any record is missing, stale, unreviewed, or discovery is incomplete. This is an optional annotation quality check; it does not gate source-based Jev scoring. Never generate descriptions automatically in CI.
 
 Production-only changes do not invalidate descriptions. Changes to the test file, `description_inputs`, or declared context sources do. Shared execution inputs are recorded separately. Commit descriptions with their tests; a second checkout can reuse them without agent indexing or Jev calls.
 

@@ -159,6 +159,8 @@ def discover_suite(root, suite, variant):
     result = {'key': suite['id'] + ':' + variant['id'], 'suite': suite['id'], 'variant': variant['id'],
               'runner': suite['runner'], 'complete': False, 'units': [], 'errors': []}
     try:
+        if not suite['command']:
+            raise FaultlineError('No native command configured; source analysis remains available')
         cwd = inside(root, suite['cwd'])
         if not cwd.is_dir():
             raise FaultlineError('Suite working directory missing')
@@ -168,6 +170,8 @@ def discover_suite(root, suite, variant):
             version = 'generic-contract-v2'
             discoverer = generic_inventory
         else:
+            if suite['runner'] not in ('phpunit', 'behat'):
+                raise FaultlineError('Native discovery unavailable; source analysis remains available')
             version = invoke([*suite['command'], '--version'], cwd, suite['timeout_seconds']).stdout.strip()
             supported = {'phpunit': r'PHPUnit 9\.6\.', 'behat': r'behat 3\.29\.'}
             if suite['runner'] not in supported or not re.search(supported[suite['runner']], version, re.I):

@@ -9,7 +9,7 @@ from ..core import DEFAULTS, FaultlineError, digest, number, read_json
 
 SCHEMA = 2
 DEFAULT_EVALUATOR = {**DEFAULTS, 'max_batch_units': 50, 'max_batch_bytes': 24000,
-                     'selection_seconds': 60, 'pricing': None}
+                     'selection_seconds': 60, 'max_test_bytes': 1000000, 'max_evidence_pairs': 10000, 'pricing': None}
 
 
 def matches(path, patterns):
@@ -81,7 +81,7 @@ def load_config(root):
     for value in raw['suites']:
         if not isinstance(value, dict) or set(value) - allowed:
             raise FaultlineError('Unknown or malformed suite configuration')
-        suite = {'kind': 'tests', 'cwd': '.', 'sources': [], 'scope': [], 'shared_inputs': [], 'description_inputs': [],
+        suite = {'runner': 'generic', 'command': [], 'kind': 'tests', 'cwd': '.', 'sources': [], 'scope': [], 'shared_inputs': [], 'description_inputs': [],
                  'must_run': [], 'prerequisites': [], 'mode': 'shadow', 'irrelevant_threshold': .95,
                  'timeout_seconds': 600, 'variants': [{'id': 'default', 'args': []}],
                  'relationships': [], 'path_map': {}, 'autoload': 'vendor/autoload.php', **value}
@@ -90,10 +90,9 @@ def load_config(root):
         seen.add(suite['id'])
         if suite['kind'] not in ('tests', 'check'):
             raise FaultlineError('kind must be tests or check')
-        if suite.get('runner') not in ('phpunit', 'behat', 'playwright', 'generic'):
-            raise FaultlineError('runner must be phpunit, behat, playwright, or generic')
-        if not strings(suite.get('command'), 'command'):
-            raise FaultlineError('command cannot be empty')
+        if not isinstance(suite['runner'], str) or not suite['runner']:
+            raise FaultlineError('runner must be nonempty text when supplied')
+        strings(suite['command'], 'command')
         inside(root, suite['cwd'])
         inside(root, str(Path(suite['cwd']) / suite['autoload']) if isinstance(suite['autoload'], str) else None)
         for key in ('sources', 'scope', 'shared_inputs', 'description_inputs', 'must_run', 'prerequisites', 'relationships'):

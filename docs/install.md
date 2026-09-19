@@ -37,9 +37,9 @@ Use one of these commands. The skill includes its Python scripts; no separate Py
 
 Ask your agent:
 
-> Use Faultline to initialize this repository, configure its source paths and suite commands, and prepare the shared test catalog. Use source-only discovery. Do not call Jev, invoke test runners, or start the application yet.
+> Use Faultline to initialize this repository, configure its test source paths. Runner commands and reviewed descriptions are optional for analysis. Use source-only discovery. Do not call Jev, invoke test runners, or start the application yet.
 
-Faultline stores suite configuration in `faultline.json` and reviewed test descriptions in `faultline/catalog/`. Commit these with your project. Local credentials, caches, and reports belong in the ignored `.faultline/` directory.
+Faultline stores suite configuration in `faultline.json` and reviewed test descriptions in `faultline/catalog/`. Share configuration and any optional descriptions with your project; they need not be committed before analysis. Local credentials, caches, and reports belong in the ignored `.faultline/` directory.
 
 ## 5. Configure the Jev API key
 
@@ -74,3 +74,7 @@ python3 -m venv ~/.venvs/faultline
 ```
 
 CodeGraph is required for indexing. Your project's test runners and application environment are required for execution. For CI, pin the installation to a reviewed Git commit. Follow the same project configuration and API-key setup above, then use the commands in the [workflow guide](../skills/faultline/references/graph-workflow.md).
+
+## Updating an existing installation
+
+Reinstall/update the skill or plugin using the same method used above, then start a new agent session so it reads the new instructions. For a standalone checkout installation, reinstall from that checkout. Confirm the active engine with `faultline --version`, or `python3 "<installed-skill>/scripts/run.py" --version`: this source version is **0.2.0**. A Git-based installation receives it only after these changes are published to that Git revision.

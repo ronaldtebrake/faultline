@@ -21,7 +21,11 @@ def validate(store, path):
         raise FaultlineError('Selection policy/configuration mismatch; select again before execution')
     if workspace(store.root) != selection.get('workspace'):
         raise FaultlineError('Checkout differs from the frozen selection; select again before execution')
-    inventory = catalog.source_inventory(store.root, config)
+    current = workspace(store.root)
+    if not current['clean'] or current['head'] != selection['change']['head']:
+        raise FaultlineError('Execution requires a clean checkout of the selected head revision')
+    from .evidence import GitSources
+    inventory = catalog.source_inventory(store.root, config, snapshot=GitSources(store.root, selection['change']['head']))
     if inventory_identity(inventory) != selection.get('inventory_hash') or records(store.root, inventory) != selection.get('catalog'):
         raise FaultlineError('Source inventory or catalog changed; select again before execution')
     return selection, config
@@ -43,6 +47,8 @@ def run_suite(store, selection_path, suite_key, *, prerequisites=(), output=None
             raise FaultlineError('Choose an exact suite:variant from the selection')
         suite_key = matches[0]
     suite, variant = available[suite_key]
+    if not suite['command']:
+        raise FaultlineError('Configure an execution command before using --execute')
     # CI owns scheduling. Require successful receipts for every prerequisite variant.
     required = {key for key, (s, _) in available.items() if s['id'] in suite['prerequisites']}
     supplied = set()

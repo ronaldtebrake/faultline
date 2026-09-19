@@ -159,14 +159,15 @@ class GraphPipelineTests(unittest.TestCase):
         self.assertEqual(3, summary['analyses'])
         self.assertEqual(2, len({c['change']['head'] for c in summary['cases']}))
 
-    def test_shadow_report_exposes_full_fallback_without_inventing_savings(self):
+    def test_shadow_report_exposes_graph_warning_without_inventing_savings(self):
         from faultline.tia.proposals import aggregate
         (self.artifacts[0] / 'graph.sqlite').write_bytes(b'corrupt')
         result = self.selection()
         value = json.loads(Path(result['report']['json']).read_text())
-        self.assertEqual(0, value['metrics']['would_omit'])
-        self.assertTrue(value['suites'][0]['would_run_full_suite'])
-        self.assertTrue(value['suites'][0]['fallbacks'])
+        self.assertEqual(1, value['metrics']['would_omit'])
+        self.assertFalse(value['suites'][0]['would_run_full_suite'])
+        self.assertIn('missing_invalid_or_incompatible_base_graph', value['suites'][0]['warnings'])
+        self.assertEqual('complete', value['semantic']['status'])
         self.assertIsNone(value['metrics']['measured_execution_savings_seconds'])
         self.assertEqual('none', aggregate(self.store)['execution'])
 
@@ -305,11 +306,12 @@ class GraphPipelineTests(unittest.TestCase):
         self.assertEqual('base', value['graph']['paths']['tests/ATest.php'][0]['snapshot'])
         self.assertIn('unit:default:tests/ATest.php', value['suites'][0]['proposed_selected'])
 
-    def test_missing_or_corrupt_graph_and_traversal_budget_fall_back(self):
+    def test_graph_gaps_remain_visible_without_blocking_source_scoring(self):
         (self.artifacts[0] / 'graph.sqlite').write_bytes(b'corrupt')
         result = self.selection()
-        self.assertEqual(0, result['proposed_omitted'])
-        self.assertIn('missing_invalid_or_incompatible_base_graph', result['fallbacks']['unit:default'])
+        self.assertEqual(1, result['proposed_omitted'])
+        frozen = checked(Path(result['path']))
+        self.assertIn('missing_invalid_or_incompatible_base_graph', frozen['suites'][0]['warnings'])
         # Head-only evidence remains bounded; an unfinished traversal is not an empty impact set.
         conf = copy.deepcopy(self.config)
         conf['graph']['max_depth'] = 1
@@ -326,7 +328,9 @@ class GraphPipelineTests(unittest.TestCase):
         with patch('faultline.tia.batch.api_key', side_effect=FaultlineError('No credential')):
             result = select(self.store, self.base, build_graphs=False)
         self.assertEqual(0, result['proposed_omitted'])
-        self.assertIn('semantic_evaluation_incomplete', result['fallbacks']['unit:default'])
+        self.assertEqual('not_evaluated', result['semantic']['status'])
+        self.assertEqual(2, result['semantic']['unscored'])
+        self.assertTrue(all('No credential' in e for e in result['semantic']['errors'].values()))
         receipt = run_suite(self.store, result['path'], 'unit', execute=True)
         self.assertEqual(7, receipt['exit_code'])
         self.assertEqual('full_evaluation', receipt['mode'])
@@ -338,6 +342,51 @@ class GraphPipelineTests(unittest.TestCase):
         (self.root / 'src/Policy.php').write_text('changed after selection')
         with self.assertRaisesRegex(FaultlineError, 'Checkout differs'):
             run_suite(self.store, result['path'], 'unit', execute=True)
+
+    def test_framework_neutral_source_scoring_with_dirty_checkout_and_no_catalog(self):
+        samples = {'features/access.feature': 'Feature: access\n Scenario Outline: allowed\n Given a policy\n Then access is granted\n Examples:\n | role |\n | editor |',
+                   'browser/access.spec.ts': 'test("access", async ({page}) => { await page.goto("/access"); });',
+                   'js/access.test.js': 'test("access", () => expect(allowed()).toBe(true));'}
+        for name, content in samples.items():
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+        self.commit()
+        base = self.git('rev-parse', 'HEAD').strip()
+        (self.root / 'settings.yml').write_text('services: {access: restricted}')
+        self.commit()
+        head = self.git('rev-parse', 'HEAD').strip()
+        # Local setup is intentionally uncommitted. Analysis reads requested Git objects.
+        write_json(self.root / 'faultline.json', {'schema_version': 2, 'suites': [
+            {'id': 'all', 'sources': ['tests/*.php', 'features/**/*.feature', 'browser/**/*.spec.ts', 'js/**/*.test.js']},
+            {'id': 'empty', 'sources': ['absent/**/*.feature']}]})
+        (self.root / 'features/access.feature').write_text('UNCOMMITTED SOURCE MUST NOT BE SENT')
+        evaluator = BatchedJev(self.store, DEFAULT_EVALUATOR)
+        requests = []
+        class Transport:
+            def request(inner, url, payload, **kw):
+                evaluator.budget.take()
+                requests.append(payload)
+                return {'model': payload['model'], 'answers': {q: answer('direct' if t['source'].endswith('.feature') else 'irrelevant')
+                        for q, t in zip(payload['questions'], payload['state']['tests'])}}, {}
+        evaluator.http = Transport()
+        with patch('faultline.tia.runners.invoke', side_effect=AssertionError('No runner allowed')):
+            result = select(self.store, base, head, evaluator=evaluator, build_graphs=False)
+            config = load_config(self.root)
+        self.assertEqual('complete', result['semantic']['status'])
+        self.assertEqual(5, result['semantic']['fully_scored'])
+        self.assertGreater(result['usage']['requests'], 0)
+        sent = json.dumps(requests)
+        self.assertIn('Scenario Outline', sent)
+        self.assertNotIn('UNCOMMITTED SOURCE', sent)
+        self.assertEqual(head, self.git('rev-parse', 'HEAD').strip())
+        frozen = checked(Path(result['path']))
+        self.assertIn('all:default:features/access.feature', frozen['suites'][0]['proposed_selected'])
+        self.assertEqual(4, result['proposed_omitted'])
+        self.assertIn('no_configured_source_targets', frozen['suites'][1]['fallbacks'])
+        with self.assertRaisesRegex(FaultlineError, 'clean checkout'):
+            run_suite(self.store, result['path'], 'all', execute=True)
+        catalog.sync(self.root, catalog.source_inventory(self.root, config))
 
     def outcomes(self, selection, complete=True):
         rows = [{'id': 'unit:default:tests/ATest.php', 'member': 'ATest::testA', 'status': 'passed', 'duration_seconds': 3},
@@ -508,3 +557,66 @@ class BatchTests(unittest.TestCase):
     def test_oversized_context_is_not_silently_truncated(self):
         requests, rejected = batches({'diff': 'x' * 50000}, [{'id': 'a', 'source': 'a', 'description': 'a'}], DEFAULT_EVALUATOR)
         self.assertEqual([], requests);self.assertEqual(['a'], rejected)
+
+
+class SourceBatchTests(unittest.TestCase):
+    def test_source_globs_preserve_directory_boundaries(self):
+        from faultline.tia.evidence import match
+        self.assertTrue(match('features/a.feature', 'features/**/*.feature'))
+        self.assertTrue(match('features/deep/a.feature', 'features/**/*.feature'))
+        self.assertFalse(match('features/deep/a.feature', 'features/*.feature'))
+        self.assertFalse(match('other/a.feature', 'features/**/*.feature'))
+
+    def test_large_utf8_evidence_deduplicates_variants_and_resumes_cache(self):
+        from faultline.tia.evidence import text_parts
+        text = 'Scenario: café 🧪\n' * 450
+        self.assertEqual(text, ''.join(p['text'] for p in text_parts(text, 100)))
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp))
+            config = {**DEFAULT_EVALUATOR, 'jev_requests': 100}
+            context = {'diff': '+ policy changed\n' * 700, 'changed_files': ['policy.yml']}
+            profile = {'id': 'a', 'source': 'access.feature', 'description': '', 'source_text': text,
+                       'graph_evidence': {}, 'execution_context': {}}
+            profiles = [profile, {**profile, 'id': 'b'}]
+            ev = BatchedJev(store, config)
+            requests = []
+            class Transport:
+                def request(inner, url, payload, **kw):
+                    ev.budget.take()
+                    requests.append(payload)
+                    return {'model': payload['model'], 'answers': {q: answer() for q in payload['questions']}}, {}
+            ev.http = Transport()
+            result = ev.evaluate_source(context, profiles)
+            self.assertTrue(result['complete'])
+            self.assertEqual(1, result['unique_evidence_targets'])
+            self.assertGreater(result['diff_fragments'], 1)
+            self.assertEqual(result['evidence_pairs'], sum(len(r['questions']) for r in requests))
+            for request in requests:
+                self.assertLessEqual(len(json.dumps(request, ensure_ascii=False).encode()), config['max_batch_bytes'])
+                self.assertLessEqual(len(json.dumps(request['state'], ensure_ascii=False).encode()), config['max_state_bytes'])
+            again = ev.evaluate_source(context, profiles)
+            self.assertEqual(0, again['requests'])
+            self.assertTrue(again['complete'])
+            changed = ev.evaluate_source(context, [profile, {**profile, 'id': 'b', 'execution_context': {'args': ['--tag', 'other']}}], dry_run=True)
+            self.assertEqual(2, changed['unique_evidence_targets'])
+
+    def test_partial_evidence_and_zero_budget_never_establish_irrelevance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            profile = {'id': 'a', 'source': 'test.js', 'description': '', 'source_text': 'test code ' * 2000,
+                       'graph_evidence': {}, 'execution_context': {}}
+            config = {**DEFAULT_EVALUATOR, 'max_evidence_pairs': 1}
+            ev = BatchedJev(Store(Path(tmp)), config)
+            class Transport:
+                def request(inner, url, payload, **kw):
+                    ev.budget.take()
+                    return {'model': payload['model'], 'answers': {q: answer() for q in payload['questions']}}, {}
+            ev.http = Transport()
+            context = {'diff': '+ change', 'changed_files': ['a']}
+            result = ev.evaluate_source(context, [profile])
+            self.assertFalse(result['complete'])
+            self.assertIsNone(result['rows']['a']['all_parts_irrelevant_probability'])
+            self.assertIn('budget exhausted', result['errors']['a'])
+            zero = BatchedJev(Store(Path(tmp) / 'fresh'), {**config, 'jev_requests': 0}).evaluate_source(context, [profile])
+            self.assertEqual({}, zero['rows'])
+            self.assertFalse(zero['complete'])
+            self.assertIn('budget exhausted', zero['errors']['a'])

@@ -15,7 +15,7 @@ def discover(root, config):
                  'execution_inputs': hashes(root, inputs), 'complete': all(s['complete'] for s in suites)})
 
 
-def source_inventory(root, config, *, native=False):
+def source_inventory(root, config, *, native=False, snapshot=None):
     """Enumerate configured source targets without loading the application.
 
     complete describes enumeration of configured paths, never native completeness.
@@ -25,7 +25,7 @@ def source_inventory(root, config, *, native=False):
     for suite, variant, key in variants(config):
         patterns = tuple(suite['sources'])
         if patterns not in files_cache:
-            files_cache[patterns] = glob_files(root, patterns)
+            files_cache[patterns] = snapshot.glob(patterns) if snapshot else glob_files(root, patterns)
         sources = files_cache[patterns]
         whole = suite['kind'] == 'check'
         if whole:
@@ -34,7 +34,8 @@ def source_inventory(root, config, *, native=False):
         for source in sources:
             identity = (source, tuple(suite['description_inputs']))
             if identity not in hashes_cache:
-                hashes_cache[identity] = hashes(root, [source, *glob_files(root, suite['description_inputs'])])
+                paths = [source, *(snapshot.glob(suite['description_inputs']) if snapshot else glob_files(root, suite['description_inputs']))]
+                hashes_cache[identity] = snapshot.hashes(paths) if snapshot else hashes(root, paths)
             fingerprint = hashes_cache[identity]
             units.append({'id': key + ':' + ('__suite__' if whole else source),
                           'source': source, 'members': [], 'locator': {'file': source},
@@ -57,11 +58,12 @@ def source_inventory(root, config, *, native=False):
                         if field in found:
                             unit[field] = found[field]
         suites.append(row)
-    inputs = ['faultline.json', *glob_files(root, [p for s in config['suites'] for p in s['shared_inputs']])]
+    shared_patterns = [p for s in config['suites'] for p in s['shared_inputs']]
+    inputs = ['faultline.json', *(snapshot.glob(shared_patterns) if snapshot else glob_files(root, shared_patterns))]
     return seal({'schema_version': SCHEMA, 'kind': 'inventory', 'basis': 'source',
-                 'native_enrichment': native, 'created_at': now(), 'head': revision(root),
+                 'native_enrichment': native, 'created_at': now(), 'head': snapshot.revision if snapshot else revision(root),
                  'config_hash': config['config_hash'], 'suites': suites,
-                 'execution_inputs': hashes(root, inputs), 'complete': all(s['complete'] for s in suites)})
+                 'execution_inputs': snapshot.hashes(inputs) if snapshot else hashes(root, inputs), 'complete': all(s['complete'] for s in suites)})
 
 
 def path_for(root, unit):
@@ -102,7 +104,7 @@ def check(root, inventory):
 
 
 def sync(root, inventory, *, legacy=None):
-    if not inventory['complete']:
+    if not inventory['complete'] and inventory.get('basis') != 'source':
         raise FaultlineError('Do not replace a catalog from incomplete discovery')
     old = {}
     if legacy:
@@ -128,7 +130,10 @@ def sync(root, inventory, *, legacy=None):
                              'provenance': {'method': 'legacy-migration' if old else 'source-inventory-draft'}})
             drafted += 1
     removed = 0
+    unresolved = {s['key'] + ':' for s in inventory['suites'] if not s['complete']}
     for path in (root / 'faultline/catalog').glob('*.json'):
+        if any(read_json(path).get('id', '').startswith(prefix) for prefix in unresolved):
+            continue
         if path not in expected:
             path.unlink()
             removed += 1
@@ -136,7 +141,7 @@ def sync(root, inventory, *, legacy=None):
 
 
 def import_records(root, inventory, input_path, reviewer):
-    if not inventory['complete']:
+    if not inventory['complete'] and inventory.get('basis') != 'source':
         raise FaultlineError('Catalog review requires complete discovery')
     rows = read_json(input_path)
     if not isinstance(rows, list) or not reviewer.strip():

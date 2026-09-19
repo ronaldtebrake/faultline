@@ -6,7 +6,7 @@ Build a language-agnostic test impact analysis engine for CI and coding agents. 
 
 The Python engine owns discovery validation, scoring, selection, caching, execution, and reporting. CodeGraph 1.6.0 owns structural parsing/resolution and its embedded SQLite graph. Faultline snapshots both base and head, reuses immutable artifacts, and joins reverse file relationships to provisional targets from configured source paths. Analysis never invokes native runners by default; native enrichment is explicit, and mandatory runner validation occurs only for the suite being executed. Existing coverage tooling is optional positive enrichment; do not build a language parser stack. The skill supports setup, reviewed descriptions, local use, and explanations. CI requires the engine and test environment, not a coding-agent session.
 
-Git shares `faultline.json` and `faultline/catalog/`. Ignored `.faultline/` holds credentials, native evidence, predictions, caches, and reports. Bootstrap descriptions once from readable test names/steps; use an agent only where enrichment helps. Developers review changed descriptions with their tests. Production changes affect execution without necessarily invalidating descriptions. Missing descriptions require execution, never automatic AI generation in CI.
+Git shares `faultline.json` and `faultline/catalog/`. Ignored `.faultline/` holds credentials, native evidence, predictions, caches, and reports. Bootstrap descriptions once from readable test names/steps; use an agent only where enrichment helps. Developers review changed descriptions with their tests. Production changes affect execution without necessarily invalidating descriptions. Descriptions are optional enrichment: Jev scores actual test source without them. Never generate descriptions automatically in CI.
 
 ## Flow and integrations
 
@@ -15,7 +15,7 @@ flowchart TD
     DEV["Developer + coding agent: maintain descriptions"] --> GIT["Git: code, suite configuration, catalog"]
     GIT --> CI["CI checks out tested revision"]
     CI --> GRAPH["CodeGraph: exact base/head graph artifacts"]
-    GRAPH --> DISC["Source discovery + catalog check (no runners)"]
+    GRAPH --> DISC["Git test source + optional catalog (no runners)"]
     DEV --> LOCAL["Optional local engine use"]
     DISC --> SELECT["select: mandatory rules + semantic judgments"]
     LOCAL --> SELECT
@@ -52,7 +52,9 @@ Remaining acceptance: validate a complete real suite inventory and reviewed desc
 
 ## Stage 2 — CodeGraph selection engine and shadow reporting
 
-Implemented shadow path: exact Git source export into isolated snapshots; pinned producer/schema validation; portable closed SQLite artifacts; compatible incremental reuse; base/head reverse dependency evidence; source-gap and traversal-limit fallbacks; graph-context Jev batching and immutable answer caches; automatic would-run reports and PR snapshot tracking without execution; separately opted-in execution receipts and JUnit/generic outcome recording.
+The implemented report-only policy now scores all readable configured targets directly from Git, including Gherkin and JavaScript/TypeScript. No reviewed description, native runner, or structural path is required. Bounded source/diff fragments retain complete evidence identities; incomplete judgments remain would-run. This deliberately changes shadow proposals only: the stricter requirements below still apply before enabling selective execution.
+
+Implemented shadow path: exact Git source export into isolated snapshots; pinned producer/schema validation; portable closed SQLite artifacts; compatible incremental reuse; base/head reverse dependency evidence; visible source-gap and traversal-limit warnings without blocking Jev; graph-context Jev batching and immutable answer caches; automatic would-run reports and PR snapshot tracking without execution; separately opted-in execution receipts and JUnit/generic outcome recording.
 
 Validated with offline contract tests and the actual CodeGraph 1.6.0 executable on synthetic PHP dependencies. Live Jev evaluation and real CI recall remain unverified. See [the working workflow](skills/faultline/references/graph-workflow.md).
 

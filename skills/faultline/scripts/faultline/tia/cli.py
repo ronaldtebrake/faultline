@@ -123,8 +123,6 @@ def dispatch(store, args):
         return {'complete': inventory['complete'], 'suites': inventory['suites'],
                 'records': [catalog.load_record(store.root, u) for s in inventory['suites'] for u in s['units']],
                 'freshness': catalog.check(store.root, inventory)['units']}
-    if not inventory['complete']:
-        raise FaultlineError('Discovery incomplete; catalog was not changed. Inspect `faultline discover`.')
     if args.catalog_action == 'sync':
         return catalog.sync(store.root, inventory, legacy=args.legacy)
     return catalog.import_records(store.root, inventory, args.input, args.reviewer)
