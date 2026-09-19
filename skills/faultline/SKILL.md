@@ -1,19 +1,33 @@
 ---
 name: faultline
-description: Discover and describe a repository's tests, build or update a Faultline catalog, and rank tests for a PR/MR or other software change using Faultline's fixed Jev evaluator, and evaluate frozen rankings against historical outcomes. Use for semantic test ranking, one-PR retrospective analysis, or explaining Faultline reports.
+description: Analyze test impact for a PR/MR with CodeGraph and Jev, maintain shared native test catalogs, run full-suite shadow evaluations, and explain Faultline reports. Also supports existing semantic rankings and retrospective evaluation.
 ---
 
 # Faultline
 
 You gather repository evidence and interpret findings. Jev supplies semantic judgments. The bundled code owns questions, probability validation, scoring, cache identity, and measurements. Never replace Jev scores or reorder its ranking with your own judgment.
 
-For shared-catalog setup or a repository containing `faultline.json`, read [the shared-catalog workflow](references/shared-catalog.md). Use native discovery and review only changed descriptions; never regenerate a shared catalog with AI in CI. These new commands do not yet implement selection or test execution. The legacy ranking flow below still consumes `.faultline/index.jsonl` or explicit generic profiles; it does not automatically consume the new shared catalog.
+Use [the CodeGraph workflow](references/graph-workflow.md) for new setup and PR/MR analysis. CodeGraph supplies structural relationships; native runners establish executable identities; Jev supplies relevance probabilities. All current execution is full-suite shadow execution. Never treat a graph's empty result as permission to skip tests.
 
-For legacy indexing requests, read [the indexing workflow](references/indexing.md) and [index contract](references/index-schema.md). For ranking or analysis, follow the flow below. For saved reports, use `report` without new inference.
+Resolve `<this-skill>` to the directory containing this installed SKILL.md. Invoke `python3 "<this-skill>/scripts/run.py" --root "<repo>" ...`, or the equivalent installed `faultline` CLI. Keep generated state in the analyzed repository, not the installed skill. CodeGraph is a separate pinned CLI dependency; its MCP/agent installer is unnecessary.
 
-Resolve `<this-skill>` to the absolute directory containing this installed SKILL.md; never assume it is inside the target repository or writable. Keep generated data in the target repository, not the installed skill. Use `python3 "<this-skill>/scripts/run.py" --root "<repo>" ...` (Python 3.10+, no third-party Python dependencies; native discovery requires the configured runners). An installed `faultline` command is equivalent. Read [the evaluator contract](references/evaluator.md) when preparing a change. For retrospective analysis also read [the history/report contract](references/report.md).
+## Current single-PR flow
 
-## Normal single-change flow
+1. Inspect existing suite commands and CI variants. Configure `faultline.json` and use [native discovery and catalog review](references/shared-catalog.md). Reuse committed descriptions; update only changed tests/context. Do not invent test identities or generate descriptions automatically in CI.
+2. Resolve the requested PR/MR's actual cumulative diff base and tested head using Git and available hosting tools. Work on the tested revision. Do not replace a stacked PR's base with the main branch. Reuse the user's authorized setup and scope.
+3. Run `select --base <base> --head <tested-head> --id <pr-id> --output <fresh-selection-path>`. It builds/reuses both graphs, obtains bounded Jev judgments, and freezes the proposal. Use dry-run when checking existing evidence/cost limits; it performs no indexing or API calls.
+4. For an evaluation request, continue through `run` for each configured suite/variant and `record` for each receipt. These execute tests locally in the configured environment; CI service/container orchestration stays with the project. Respect prerequisite receipts. Capture JUnit for supported native runners or import the exact generic outcome contract. Test failures must still be recorded; they do not end the reporting flow.
+5. Present the saved Markdown/JSON report and `shadow-report` aggregate. Distinguish graph paths, semantic relevance, observed regressions, and measured coverage. Surface full fallbacks, unmatched tests, incomplete data, costs, and limits. Do not claim that a green run proves omission safe.
+
+For ranking-only requests, stop after presenting the frozen proposal. For full analysis/evaluation requests, carry through reporting when the environment is available; describe concrete blockers if execution cannot proceed. Do not trigger remote CI jobs or post messages unless requested.
+
+Credentials are loaded lazily from `TYPESAFE_API_KEY`, repository `.faultline/.env`, then root `.env`. If absent, explain the full fallback and let the user enter the key locally; never ask them to paste it into chat or display credential files. Selected change context, descriptions, and graph paths are sent to Jev. Follow the configured request/time/byte limits.
+
+## Existing ranking and retrospective data
+
+The `rank`, `evaluate`, and `report` commands remain available for existing explicit profile/prediction files. They do not consume the shared graph pipeline's selections. Read [indexing](references/indexing.md), [the index contract](references/index-schema.md), [the evaluator contract](references/evaluator.md), and [history/reporting](references/report.md) only when working with those records.
+
+## Existing explicit-profile ranking flow
 
 1. Read repository instructions. Use [the indexing workflow](references/indexing.md) to create/update `.faultline/index.jsonl` when missing or stale. Do not force a framework-specific implementation on the repository.
 2. Resolve the requested PR/MR and the appropriate base/head/tested revisions with Git and the available hosting tools. Cache evidence under `.faultline/history/`. Use a PR/MR's cumulative change, not each constituent commit as an unrelated change. Do not expose a standalone commit-ranking workflow as the default.
@@ -44,4 +58,4 @@ Repository collection uses the agent's available tools, not a Faultline hosting 
 
 Honor provider `Retry-After`/reset instructions and bounded backoff. Do not repeatedly fetch expired artifacts, poll unfinished runs, or download unrelated logs. The bundled Jev transport independently enforces pacing, a request ceiling including retries, and resumable rate-limit cooldowns. Unknown network outcomes are not retried automatically because inference may already have been billed.
 
-Version one supplies a signal for the agent and future CI policy. It neither runs tests nor decides which tests to skip. Preserve exact runner locators so later execution-order integrations can consume the same catalog.
+The existing explicit-profile ranking commands do not execute tests. The graph workflow executes configured full suites and records proposed omissions for assessment; it does not enable test skipping.

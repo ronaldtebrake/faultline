@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
+import tempfile
 import subprocess
 from pathlib import Path
 
@@ -16,7 +19,7 @@ def git(root, *args):
 
 
 def revision(root, ref='HEAD'):
-    return git(root, 'rev-parse', '--verify', ref + '^{commit}')
+    return git(root, 'rev-parse', '--verify', '--end-of-options', ref + '^{commit}')
 
 
 def file_hash(root, path):
@@ -56,12 +59,25 @@ def checked(path, kind=None):
 
 
 def save_frozen(path, value):
+    path = Path(path)
     value = seal(value)
+    path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
-        prior = checked(path)
-        if prior != value:
+        if checked(path) != value:
             raise FaultlineError('Refusing to overwrite frozen evidence; use a new output path')
-    else:
-        write_json(path, value)
+        return value
+    # Atomic create, rather than check-then-replace: concurrent writers cannot
+    # replace an already published prediction with another model response.
+    fd, temporary = tempfile.mkstemp(prefix='.frozen-', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w') as stream:
+            json.dump(value, stream, indent=2, ensure_ascii=False, allow_nan=False)
+            stream.write('\n')
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            if checked(path) != value:
+                raise FaultlineError('Concurrent writer published different frozen evidence; use a new output path') from None
+    finally:
+        os.unlink(temporary)
     return value
-

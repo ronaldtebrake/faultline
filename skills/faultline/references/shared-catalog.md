@@ -1,6 +1,6 @@
 # Shared catalogs and native mapping
 
-Use this workflow when the repository has `faultline.json`, or when setting up shared test descriptions for the TIA engine. The foundation is implemented; selection, execution, CI cache sharing, and prospective reports remain planned. These commands make no Jev requests. Discovery invokes project code, including runner bootstraps and data providers; run it in the same trusted environment used for tests.
+Use this workflow when the repository has `faultline.json`, or when setting up shared test descriptions for the TIA engine. For CodeGraph artifacts, selection, execution, and reports, follow [the graph workflow](graph-workflow.md). These commands make no Jev requests. Discovery invokes project code, including runner bootstraps and data providers; run it in the same trusted environment used for tests.
 
 Run the installed `faultline` command or the equivalent `python3 "<this-skill>/scripts/run.py"`. Native discovery currently checks PHPUnit 9.6 and Behat 3.29. Other versions and frameworks can supply the generic inventory contract below. An unsupported version, empty inventory, missing identity, or runner failure produces `complete: false` and exit code 2; continue full execution. Discovery never authorizes skipping tests.
 

@@ -56,6 +56,8 @@ def main(argv=None):
         if args.command in TIA_COMMANDS:
             result = dispatch(store, args)
             print(json.dumps(result, indent=2, ensure_ascii=False))
+            if args.command == 'run':
+                return result['exit_code']
             return 2 if result.get('complete') is False else 0
         config = store.config()
         if args.command == 'init':

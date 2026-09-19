@@ -35,7 +35,7 @@ def load_config(root):
     raw = read_json(root / 'faultline.json')
     if not isinstance(raw, dict) or raw.get('schema_version') != SCHEMA:
         raise FaultlineError('Create faultline.json with schema_version: 2; see docs/tia.md')
-    if set(raw) - {'schema_version', 'repository', 'suites', 'evaluator', 'scope', 'state_max_age_seconds'}:
+    if set(raw) - {'schema_version', 'repository', 'suites', 'evaluator', 'scope', 'state_max_age_seconds', 'graph'}:
         raise FaultlineError('Unknown faultline.json configuration field')
     if not isinstance(raw.get('suites'), list) or not raw['suites']:
         raise FaultlineError('Configure at least one suite')
@@ -43,7 +43,18 @@ def load_config(root):
         raise FaultlineError('evaluator must be an object')
     if not isinstance(raw.get('repository', root.name), str) or not raw.get('repository', root.name):
         raise FaultlineError('repository must be nonempty text')
-    config = {'schema_version': SCHEMA, 'repository': raw.get('repository', root.name),
+    from .graph import DEFAULTS as GRAPH_DEFAULTS, VERSION as GRAPH_VERSION
+    graph = {**GRAPH_DEFAULTS, **raw.get('graph', {})} if isinstance(raw.get('graph', {}), dict) else {}
+    if not graph or set(graph) - set(GRAPH_DEFAULTS) or graph['version'] != GRAPH_VERSION:
+        raise FaultlineError('Use the supported pinned CodeGraph version and documented graph settings')
+    if not strings(graph['command'], 'graph.command'):
+        raise FaultlineError('graph.command cannot be empty')
+    for key in set(GRAPH_DEFAULTS) - {'command', 'version', 'extensions'}:
+        if not isinstance(graph[key], int) or isinstance(graph[key], bool) or graph[key] <= 0:
+            raise FaultlineError('Graph budgets must be positive integers')
+    if not isinstance(graph['extensions'], dict) or not all(isinstance(k, str) and k.startswith('.') and isinstance(v, str) and v for k, v in graph['extensions'].items()):
+        raise FaultlineError('graph.extensions must map file extensions to CodeGraph language IDs')
+    config = {'graph': graph, 'schema_version': SCHEMA, 'repository': raw.get('repository', root.name),
               'scope': strings(raw.get('scope', []), 'scope'), 'suites': [],
               'state_max_age_seconds': raw.get('state_max_age_seconds', 86400),
               'evaluator': {**DEFAULT_EVALUATOR, **raw.get('evaluator', {})}}

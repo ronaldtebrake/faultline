@@ -31,11 +31,26 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class HTTP:
-    def __init__(self, cache: Path, provider: str, config: dict, token: str, budget: Budget):
+    def __init__(self, cache: Path, provider: str, config: dict, token: str, budget: Budget, *, deadline=None):
         self.cache = cache / provider
         self.config, self.token, self.budget = config, token, budget
+        self.deadline = deadline
         self.last = 0.0
         self.opener = urllib.request.build_opener(NoRedirect())
+
+    def remaining(self):
+        if self.deadline is None:
+            return 45.0
+        value = self.deadline - time.monotonic()
+        if value <= 0:
+            raise FaultlineError("Selection time budget exhausted; execute the affected suite fully")
+        return min(45.0, value)
+
+    def pause(self, delay):
+        if self.deadline is not None and delay >= self.deadline - time.monotonic():
+            raise FaultlineError("Rate limiting/pacing exceeds the remaining selection time budget")
+        time.sleep(max(0, delay))
+        self.remaining()
 
     def request(self, url, *, payload, cached=False, accept="application/json", max_bytes=1_000_000):
         if url != "https://api.typesafe.ai/v1/systemone":
@@ -45,18 +60,34 @@ class HTTP:
         if delay > self.config["max_wait"]:
             raise FaultlineError(f"Jev rate limit still active; resume in at least {int(delay) + 1}s.")
         if delay > 0:
-            time.sleep(delay)
+            self.pause(delay)
         headers = {"Authorization": f"Bearer {self.token}", "Accept": accept,
                    "User-Agent": "faultline-cli/0.1", "Content-Type": "application/json"}
         body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode()
         for attempt in range(self.config["retries"] + 1):
+            self.pause(max(0, self.last + self.config["request_interval"] - time.monotonic()))
             self.budget.take()
-            time.sleep(max(0, self.last + self.config["request_interval"] - time.monotonic()))
             self.last = time.monotonic()
             request = urllib.request.Request(url, data=body, headers=headers)
             try:
-                with self.opener.open(request, timeout=45) as response:
-                    raw = response.read(max_bytes + 1)
+                with self.opener.open(request, timeout=self.remaining()) as response:
+                    if self.deadline is not None and hasattr(response, 'read1'):
+                        chunks, total = [], 0
+                        while total <= max_bytes:
+                            remaining = self.remaining()
+                            # CPython's HTTPResponse exposes the underlying socket here.
+                            sock = getattr(getattr(getattr(response, 'fp', None), 'raw', None), '_sock', None)
+                            if sock is not None:
+                                sock.settimeout(remaining)
+                            chunk = response.read1(min(65536, max_bytes + 1 - total))
+                            if not chunk:
+                                break
+                            chunks.append(chunk)
+                            total += len(chunk)
+                        raw = b''.join(chunks)
+                    else:
+                        raw = response.read(max_bytes + 1)
+                    self.remaining()
                 if len(raw) > max_bytes:
                     raise FaultlineError("Jev response exceeded the size limit; data was not truncated.")
                 try:
@@ -80,7 +111,7 @@ class HTTP:
                 write_json(self.cache / "cooldown.json", {"until": time.time() + delay})
                 if delay > self.config["max_wait"] or attempt == self.config["retries"]:
                     raise FaultlineError(f"Jev rate limited/overloaded; resume in at least {int(delay) + 1}s.") from None
-                time.sleep(delay)
+                self.pause(delay)
             except (urllib.error.URLError, TimeoutError, OSError):
                 raise FaultlineError("Jev connection failed; saved work is intact. No automatic retry of an ambiguous inference request.") from None
         raise FaultlineError("Retry limit reached")
