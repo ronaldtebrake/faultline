@@ -61,7 +61,7 @@ The key is needed for live Jev judgments. Selected change context, test source, 
 
 Ask your agent, replacing `123` with your PR or MR number:
 
-> Use Faultline to analyze PR 123 with CodeGraph and Jev. Limit Jev to 10 HTTP requests. Save a shadow report showing which tests Faultline would run or omit. Do not execute tests or change CI.
+> Use Faultline to analyze PR 123 with CodeGraph and Jev. Prepare the graphs and show the estimated scoring work first. Use at most 10 Jev HTTP requests in total for this task; do not raise or reset that budget. Save a shadow report showing which tests Faultline would run or omit. Do not execute tests or change CI.
 
 Your agent needs access to the PR/MR through your existing hosting tools. Faultline saves the would-run report without executing tests. Use `faultline shadow-report` to summarize saved PR snapshots; keep your existing CI test jobs unchanged.
 
@@ -81,6 +81,12 @@ CodeGraph is required for indexing. Your project's test runners and application 
 
 ## Updating an existing installation
 
-Reinstall/update the skill or plugin using the same method used above, then start a new agent session so it reads the new instructions. For a standalone checkout installation, reinstall from that checkout. Confirm the active engine with `faultline --version`, or `python3 "<installed-skill>/scripts/run.py" --version`: this source version is **0.3.0**. A Git-based installation receives it only after these changes are published to that Git revision.
+Reinstall/update the skill or plugin using the same method used above, then start a new agent session so it reads the new instructions. For a standalone checkout installation, reinstall from that checkout. Confirm the active engine with `faultline --version`, or `python3 "<installed-skill>/scripts/run.py" --version`: this source version is **0.4.0**. A Git-based installation receives it only after these changes are published to that Git revision.
 
 Version 0.3.0 uses a new graph artifact schema. Re-run `init --baseline <default-branch>` or import a baseline produced by this version. Old catalogs are ignored by the graph workflow; old artifacts are not overwritten.
+
+## TLS certificate errors
+
+An `SSL: CERTIFICATE_VERIFY_FAILED` error concerns Python's HTTPS trust store, not Git SSH or your Jev key. Faultline uses verified TLS and honors `SSL_CERT_FILE` / `SSL_CERT_DIR`. Where Python's certificate bundle is missing, install `certifi` in the **same Python environment that runs the skill**, for example `python3 -m pip install certifi` inside its virtual environment. Faultline automatically supplements default roots with that bundle unless explicit certificate paths are configured. Use an organization-approved CA bundle for enterprise proxies. Never disable certificate verification or edit installed skill copies as a workaround.
+
+Version 0.4.0 keeps 0.3.0 graph baselines. Its Jev packing changes the actual inference inputs, so earlier Jev batches are not reused under the new evaluator version. Subsequent identical bounded runs resume using the new cache.

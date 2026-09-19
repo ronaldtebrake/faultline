@@ -1,5 +1,7 @@
 import io
 import json
+import ssl
+import sys
 import tempfile
 import unittest
 import urllib.error
@@ -90,3 +92,35 @@ class TransportTests(unittest.TestCase):
         response['model'] = 'another-version'
         with self.assertRaises(FaultlineError):
             evaluator.evaluate(read_json(path), profile)
+
+
+class TLSTests(unittest.TestCase):
+    def test_optional_certifi_supplements_default_roots(self):
+        from faultline.network import tls_context
+        context = Mock()
+        certifi = Mock()
+        certifi.where.return_value = '/trusted/test-ca.pem'
+        with patch.dict('os.environ', {}, clear=True), patch.dict(sys.modules, {'certifi': certifi}),              patch('faultline.network.ssl.create_default_context', return_value=context):
+            self.assertIs(context, tls_context())
+        context.load_verify_locations.assert_called_once_with(cafile='/trusted/test-ca.pem')
+
+    def test_explicit_trust_configuration_is_respected_and_verification_stays_enabled(self):
+        from faultline.network import tls_context
+        with patch.dict('os.environ', {'SSL_CERT_FILE': '/unused-test-path'}),              patch.dict(sys.modules, {'certifi': None}):
+            context = tls_context()
+        self.assertEqual(ssl.CERT_REQUIRED, context.verify_mode)
+        self.assertTrue(context.check_hostname)
+
+    def test_certificate_failure_is_actionable_without_exposing_error_details(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            http = HTTP(Path(tmp), 'jev', {**DEFAULTS, 'request_interval': 0}, 'secret-token', Budget(2))
+            http.opener = Mock()
+            http.opener.open.side_effect = urllib.error.URLError(ssl.SSLCertVerificationError(1, 'private-path secret-token'))
+            with self.assertRaises(FaultlineError) as caught:
+                http.request('https://api.typesafe.ai/v1/systemone', payload={})
+            self.assertIn('certificate verification failed', str(caught.exception))
+            self.assertIn('SSL_CERT_FILE', str(caught.exception))
+            self.assertNotIn('secret-token', str(caught.exception))
+            self.assertNotIn('private-path', str(caught.exception))
+            self.assertEqual(1, http.budget.used)
+            self.assertEqual(1, http.opener.open.call_count)

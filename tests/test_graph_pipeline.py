@@ -576,7 +576,7 @@ class SourceBatchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             store = Store(Path(tmp))
             config = {**DEFAULT_EVALUATOR, 'jev_requests': 100}
-            context = {'diff': '+ policy changed\n' * 700, 'changed_files': ['policy.yml']}
+            context = {'diff': '+ policy changed\n' * 1600, 'changed_files': ['policy.yml']}
             profile = {'id': 'a', 'source': 'access.feature', 'description': '', 'source_text': text,
                        'graph_evidence': {}, 'execution_context': {}}
             profiles = [profile, {**profile, 'id': 'b'}]
@@ -604,7 +604,7 @@ class SourceBatchTests(unittest.TestCase):
 
     def test_partial_evidence_and_zero_budget_never_establish_irrelevance(self):
         with tempfile.TemporaryDirectory() as tmp:
-            profile = {'id': 'a', 'source': 'test.js', 'description': '', 'source_text': 'test code ' * 2000,
+            profile = {'id': 'a', 'source': 'test.js', 'description': '', 'source_text': 'test code ' * 10000,
                        'graph_evidence': {}, 'execution_context': {}}
             config = {**DEFAULT_EVALUATOR, 'max_evidence_pairs': 1}
             ev = BatchedJev(Store(Path(tmp)), config)

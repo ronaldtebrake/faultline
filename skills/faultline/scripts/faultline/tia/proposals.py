@@ -74,6 +74,8 @@ def report_selection(store, selection):
             lines.append(f"| {cell(target['id'])} | {target['decision'].removeprefix('would_')} | {judgment.get('score', 'unscored')} | {judgment.get('all_parts_irrelevant_probability', judgment.get('probabilities', {}).get('irrelevant', 'unknown'))} | {cell(', '.join(target['reasons']))} |")
         if not suite['targets']:
             lines += ['', 'No source targets enumerated. This does not mean the suite has no tests.']
+    pending = value['usage'].get('remaining_requests', 'unknown')
+    lines += ['', f"Remaining Jev batches: {pending}. Re-run the same base/head and input settings to resume from cache within another explicit request cap. No budget is raised automatically."]
     lines += ['', '## Analysis effort', '',
               f"Jev requests: {value['usage']['requests']}; cached fragment judgments: {value['usage']['cache_hits']}; analysis: {value['selection_seconds']:.3f}s.",
               f"Estimated input cost: {value['cost']['input_usd_estimate']} (unknown when no applicable price or usage is available).", '',

@@ -33,6 +33,9 @@ def add_commands(commands):
     select.add_argument('--base-graph', type=Path)
     select.add_argument('--head-graph', type=Path)
     select.add_argument('--no-build', action='store_true', help='Use restored artifacts only; missing indexes use an explicit Git source fallback')
+    select.add_argument('--max-requests', type=int, help='Per-invocation Jev request cap including retries; does not edit configuration')
+    select.add_argument('--selection-seconds', type=float, help='Per-invocation inference time limit')
+    select.add_argument('--prepare', action='store_true', help='Build/reuse graphs and estimate Jev work without contacting Jev')
     select.add_argument('--dry-run', action='store_true', help='Inspect cached evidence and request estimates; no indexing or API calls')
     select.add_argument('--native', action='store_true', help='Opt into runner discovery in a prepared application environment')
     select.add_argument('--output', type=Path)
@@ -96,7 +99,7 @@ def dispatch(store, args):
     if args.command == 'select':
         from .selection import select
         return select(store, args.base, args.head, identifier=args.id, output=args.output, dry_run=args.dry_run,
-                      base_graph=args.base_graph, head_graph=args.head_graph, build_graphs=not args.no_build, native=args.native, baseline=args.baseline)
+                      base_graph=args.base_graph, head_graph=args.head_graph, build_graphs=not args.no_build, native=args.native, baseline=args.baseline, max_requests=args.max_requests, selection_seconds=args.selection_seconds, prepare=args.prepare)
     if args.command == 'run':
         from .execution import run_suite
         return run_suite(store, args.selection, args.suite, prerequisites=args.prerequisite, output=args.output, junit_output=args.junit_output, execute=args.execute)

@@ -10,7 +10,7 @@ from pathlib import Path
 from ..core import DEFAULTS, FaultlineError, digest, number, read_json
 
 SCHEMA = 2
-DEFAULT_EVALUATOR = {**DEFAULTS, 'max_batch_units': 50, 'max_batch_bytes': 24000,
+DEFAULT_EVALUATOR = {**DEFAULTS, 'max_batch_units': 50, 'max_batch_bytes': 48000,
                      'selection_seconds': 60, 'max_test_bytes': 1000000, 'max_evidence_pairs': 10000, 'pricing': None}
 
 

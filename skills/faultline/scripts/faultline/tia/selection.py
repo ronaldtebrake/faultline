@@ -6,7 +6,7 @@ import re
 import time
 from pathlib import Path
 
-from ..core import FaultlineError, digest, now
+from ..core import FaultlineError, digest, now, number
 from . import graph
 from .batch import BATCH_VERSION, BatchedJev
 from .common import checked, hashes, revision, save_frozen, seal
@@ -15,7 +15,7 @@ from .mapping import covered_units
 from .. import __version__
 from .evidence import test_profile
 
-POLICY = 'codegraph-primary-index-v5'
+POLICY = 'codegraph-complete-targets-v6'
 
 
 def git_output(root, *args):
@@ -119,10 +119,18 @@ def decisions(root, config, inventory, context, snapshot, graph_evidence, source
 
 
 def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=False, evaluator=None,
-           base_graph=None, head_graph=None, build_graphs=True, native=False, baseline=None):
+           base_graph=None, head_graph=None, build_graphs=True, native=False, baseline=None, max_requests=None, selection_seconds=None, prepare=False):
     started = time.monotonic()
     store.initialize()
     config = load_config(store.root)
+    if max_requests is not None:
+        number(max_requests, 'max_requests', allow_zero=True)
+        config['evaluator']['jev_requests'] = max_requests
+    if selection_seconds is not None:
+        number(selection_seconds, 'selection_seconds')
+        config['evaluator']['selection_seconds'] = selection_seconds
+    if prepare and dry_run:
+        raise FaultlineError('Choose --prepare to build graphs or --dry-run to inspect cached graphs')
     context = change(store.root, base, head, identifier)
     if native and (revision(store.root) != context['head'] or not workspace(store.root)['clean']):
         raise FaultlineError('Optional native enrichment requires a clean tested checkout; omit --native for source-only analysis')
@@ -152,10 +160,10 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
     evaluator = evaluator or BatchedJev(store, config['evaluator'], deadline=time.monotonic() + config['evaluator']['selection_seconds'])
     inference_started = time.monotonic()
     evaluate = evaluator.evaluate_source if isinstance(evaluator, BatchedJev) else evaluator.evaluate
-    result = evaluate(context, profiles, dry_run=dry_run)
+    result = evaluate(context, profiles, dry_run=dry_run or prepare)
     inference_seconds = time.monotonic() - inference_started
-    if dry_run:
-        return {'dry_run': True, 'change': {k: context[k] for k in ('id', 'base', 'head', 'changed_files')},
+    if dry_run or prepare:
+        return {'dry_run': True, 'graphs_prepared': prepare, 'change': {k: context[k] for k in ('id', 'base', 'head', 'changed_files')},
                 'candidate_units': len(profiles), 'estimate': result, 'index': index_provenance, 'unknown_paths': unknown, 'graph': graph_evidence,
                 'fallbacks': {s['key']: s['fallbacks'] for s in suites}, 'execution': 'none', 'mode': 'shadow'}
     for suite in suites:
@@ -237,7 +245,7 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
                      'inventory_hash': inventory_identity(raw_inventory), 'index': index_provenance, 'relationship_evidence': evidence,
                      'evaluator': {'model': config['evaluator']['model'], 'batch_version': BATCH_VERSION},
                      'suites': suites, 'judgments': result['rows'], 'semantic_errors': result['errors'],
-                     'usage': {k: result[k] for k in ('batches', 'requests', 'cache_hits', 'uncached_requests', 'usage', 'unique_evidence_targets', 'evidence_pairs', 'scheduled_pairs', 'diff_fragments') if k in result},
+                     'usage': {k: result[k] for k in ('batches', 'requests', 'cache_hits', 'uncached_requests', 'usage', 'unique_evidence_targets', 'evidence_pairs', 'diff_fragments', 'remaining_requests', 'request_ceiling', 'target_completion_ceiling', 'blocked_targets', 'uncached_payload_bytes', 'pacing_floor_seconds', 'selection_seconds_limit') if k in result},
                      'selection_seconds': time.monotonic() - started, 'graph_seconds': graph_seconds,
                      'inference_seconds': inference_seconds, 'cost': cost, 'unknown_paths': unknown,
                      'complete': True, 'semantic_complete': semantic_complete, 'semantic': semantic,

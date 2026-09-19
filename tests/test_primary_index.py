@@ -210,3 +210,21 @@ class PrimaryIndexTests(unittest.TestCase):
         source = GraphSources(self.root, config, derived['path'], self.base)
         self.assertEqual(['features/access.feature'], [u['source'] for u in source.inventory['suites'][0]['units']])
         self.assertEqual(['init', 'sync'], self.producer_calls)
+
+    def test_prepare_builds_graphs_without_jev_and_run_cap_does_not_edit_config(self):
+        config_before = (self.root / 'faultline.json').read_bytes()
+        with patch('faultline.tia.batch.api_key', side_effect=AssertionError('No API key needed')):
+            with patch('builtins.print') as output:
+                code = main(['--root', str(self.root), 'select', '--base', self.base, '--prepare', '--max-requests', '0'])
+            self.assertEqual(0, code)
+            plan = json.loads(output.call_args.args[0])
+            self.assertTrue(plan['graphs_prepared'])
+            self.assertEqual(0, plan['estimate']['request_ceiling'])
+            self.assertEqual(0, plan['estimate']['target_completion_ceiling'])
+            with patch('builtins.print') as output:
+                code = main(['--root', str(self.root), 'select', '--base', self.base, '--max-requests', '0'])
+            self.assertEqual(2, code)
+            value = json.loads(output.call_args.args[0])
+            self.assertEqual('not_evaluated', value['semantic']['status'])
+            self.assertTrue(Path(value['report']['markdown']).exists())
+        self.assertEqual(config_before, (self.root / 'faultline.json').read_bytes())

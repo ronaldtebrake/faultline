@@ -53,7 +53,7 @@ See the [setup guide](docs/install.md) for installation and [API-key configurati
 
 ## Status
 
-Implemented: revision-specific CodeGraph artifacts with incremental reuse, portable baseline import/export and a primary graph source/test index, native PHPUnit/Behat discovery, batched and cached Jev evaluation, frozen proposals, validated full-suite execution, native/generic outcome import, and Markdown/JSON shadow reports. Existing semantic ranking and retrospective reports remain available.
+Implemented: revision-specific CodeGraph artifacts with incremental reuse, portable baseline import/export and a primary graph source/test index, native PHPUnit/Behat discovery, bounded Jev cohorts with preflight estimates, completed-target progress, and resumable caches, frozen proposals, validated full-suite execution, native/generic outcome import, and Markdown/JSON shadow reports. Existing semantic ranking and retrospective reports remain available.
 
 **Shadow mode does not execute tests.** It saves proposals per PR/MR and aggregates them across snapshots. Actual execution requires `run --execute` and currently runs full suites; selective CI execution remains future work. Graph language support and framework wiring remain incomplete. Graph gaps are reported, while Jev continues scoring source, including Behat features. Unscored or partially scored targets remain proposed to run. Reports show semantic completion separately from graph limitations. Artifact producer trust is supplied by your CI storage permissions.
 

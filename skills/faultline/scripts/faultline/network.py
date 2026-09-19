@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import ssl
 import random
 import time
 import urllib.error
@@ -10,6 +12,7 @@ from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
+from . import __version__
 from .core import FaultlineError, read_json, write_json
 
 
@@ -30,13 +33,33 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def tls_context():
+    try:
+        context = ssl.create_default_context()
+    except (OSError, ssl.SSLError):
+        raise FaultlineError('Cannot load TLS trust configuration; verify SSL_CERT_FILE and SSL_CERT_DIR') from None
+    # Explicit enterprise trust settings take precedence. Otherwise supplement
+    # Python's default roots when the optional certifi package is available.
+    if not (os.environ.get('SSL_CERT_FILE') or os.environ.get('SSL_CERT_DIR')):
+        try:
+            import certifi
+        except ImportError:
+            pass
+        else:
+            try:
+                context.load_verify_locations(cafile=certifi.where())
+            except (OSError, ssl.SSLError):
+                raise FaultlineError('Cannot load the optional certifi CA bundle; repair it or configure SSL_CERT_FILE') from None
+    return context
+
+
 class HTTP:
     def __init__(self, cache: Path, provider: str, config: dict, token: str, budget: Budget, *, deadline=None):
         self.cache = cache / provider
         self.config, self.token, self.budget = config, token, budget
         self.deadline = deadline
         self.last = 0.0
-        self.opener = urllib.request.build_opener(NoRedirect())
+        self.opener = urllib.request.build_opener(NoRedirect(), urllib.request.HTTPSHandler(context=tls_context()))
 
     def remaining(self):
         if self.deadline is None:
@@ -62,7 +85,7 @@ class HTTP:
         if delay > 0:
             self.pause(delay)
         headers = {"Authorization": f"Bearer {self.token}", "Accept": accept,
-                   "User-Agent": "faultline-cli/0.1", "Content-Type": "application/json"}
+                   "User-Agent": f"faultline-cli/{__version__}", "Content-Type": "application/json"}
         body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode()
         for attempt in range(self.config["retries"] + 1):
             self.pause(max(0, self.last + self.config["request_interval"] - time.monotonic()))
@@ -112,6 +135,11 @@ class HTTP:
                 if delay > self.config["max_wait"] or attempt == self.config["retries"]:
                     raise FaultlineError(f"Jev rate limited/overloaded; resume in at least {int(delay) + 1}s.") from None
                 self.pause(delay)
-            except (urllib.error.URLError, TimeoutError, OSError):
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+                if isinstance(reason, ssl.SSLCertVerificationError):
+                    raise FaultlineError('Jev TLS certificate verification failed. Configure SSL_CERT_FILE with a trusted CA bundle or install certifi in the Python environment running Faultline. Certificate verification remains enabled.') from None
+                if isinstance(reason, TimeoutError):
+                    raise FaultlineError('Jev request timed out; saved work is intact. No automatic retry of an ambiguous inference request.') from None
                 raise FaultlineError("Jev connection failed; saved work is intact. No automatic retry of an ambiguous inference request.") from None
         raise FaultlineError("Retry limit reached")
