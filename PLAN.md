@@ -4,18 +4,18 @@
 
 Build a language-agnostic test impact analysis engine for CI and coding agents. Combine deterministic positive impact evidence with Jev relevance judgments to reduce CI work while preserving observed regression detection. Semantic relevance, regression recall, and measured code coverage are separate metrics. No policy guarantees preservation of all coverage.
 
-The Python engine owns discovery validation, scoring, selection, caching, execution, and reporting. CodeGraph 1.6.0 owns structural parsing/resolution and its embedded SQLite graph. Faultline snapshots both base and head, reuses immutable artifacts, and joins reverse file relationships to provisional targets from configured source paths. Analysis never invokes native runners by default; native enrichment is explicit, and mandatory runner validation occurs only for the suite being executed. Existing coverage tooling is optional positive enrichment; do not build a language parser stack. The skill supports setup, reviewed descriptions, local use, and explanations. CI requires the engine and test environment, not a coding-agent session.
+The Python engine owns discovery validation, scoring, selection, caching, execution, and reporting. CodeGraph 1.6.0 owns structural parsing/resolution and its embedded SQLite graph. Faultline snapshots both base and head, reuses immutable artifacts, and joins reverse file relationships to provisional targets from configured source paths. Analysis never invokes native runners by default; native enrichment is explicit, and mandatory runner validation occurs only for the suite being executed. Existing coverage tooling is optional positive enrichment; do not build a language parser stack. The skill supports setup, baseline sharing, local use, and explanations. CI requires the engine and test environment, not a coding-agent session.
 
-Git shares `faultline.json` and `faultline/catalog/`. Ignored `.faultline/` holds credentials, native evidence, predictions, caches, and reports. Bootstrap descriptions once from readable test names/steps; use an agent only where enrichment helps. Developers review changed descriptions with their tests. Production changes affect execution without necessarily invalidating descriptions. Descriptions are optional enrichment: Jev scores actual test source without them. Never generate descriptions automatically in CI.
+Git shares `faultline.json`. The graph database is the primary source/test index; namespaced source and target tables sit beside CodeGraph's structural tables. `init --baseline <ref>` builds a revision index once. Immutable artifact export/import shares baselines across checkouts, and compatible ancestors seed separate branch snapshots. Credentials, indexes, predictions, caches, and reports stay in ignored `.faultline/`. The current workflow neither reads nor maintains the earlier description catalog; its commands remain only for older explicit workflows.
 
 ## Flow and integrations
 
 ```mermaid
 flowchart TD
-    DEV["Developer + coding agent: maintain descriptions"] --> GIT["Git: code, suite configuration, catalog"]
+    DEV["Developer + coding agent: configure test sources"] --> GIT["Git: code + suite configuration"]
     GIT --> CI["CI checks out tested revision"]
     CI --> GRAPH["CodeGraph: exact base/head graph artifacts"]
-    GRAPH --> DISC["Git test source + optional catalog (no runners)"]
+    GRAPH --> DISC["Query graph source/test index (no runners)"]
     DEV --> LOCAL["Optional local engine use"]
     DISC --> SELECT["select: mandatory rules + semantic judgments"]
     LOCAL --> SELECT
@@ -31,28 +31,30 @@ flowchart TD
     REPORT --> DEV
 ```
 
-`graph build/inspect`, `discover`, `catalog`, `select`, `run`, `record`, `shadow-report`, and optional `mapping import-phpunit` are implemented with report-only shadow defaults. `select` saves proposal reports immediately; `shadow-report` tracks PR snapshots. `run --execute`, `record`, and `execution-report` are separate opt-in execution/evaluation commands. Existing CI artifact tooling transports immutable graph and Jev caches; producer authentication remains a CI responsibility. Existing `rank`, `evaluate`, and `report` retain their legacy ranking contracts.
+`init --baseline`, `graph build/inspect/import/export`, `discover`, `select`, `run`, `record`, `shadow-report`, and optional `mapping import-phpunit` are implemented with report-only shadow defaults. `select` saves proposal reports immediately; `shadow-report` tracks PR snapshots. `run --execute`, `record`, and `execution-report` are separate opt-in execution/evaluation commands. Existing CI artifact tooling transports immutable graph and Jev caches; producer authentication remains a CI responsibility. Existing `rank`, `evaluate`, and `report` retain their legacy ranking contracts.
 
 Git/hosting tooling supplies cumulative PR/MR changes, tested revisions, and outcome artifacts. CI retains containers, services, isolation, matrices, and scheduling. Faultline does not replace hosting platforms or the CI scheduler.
 
-## Stage 1 — Shared catalog and native runner contracts
+## Stage 1 — Primary graph index and native runner contracts
+
+The graph source/target index supersedes the original shared-description catalog in the current workflow. Baselines are immutable and portable; stable repository identity and revision/configuration keys separate checkouts and branches. Legacy catalog contracts listed below are retained only for existing data.
 
 Implemented:
 
-- Source-only `discover`, catalog maintenance, and `select`; explicit `--native` enrichment. Whole checks use `kind: "check"` and need no individual test inventory.
-- Versioned configuration and generic JSON discovery; native PHPUnit 9.6 list XML plus Composer class-map discovery, and Behat 3.29 dry-run JUnit discovery.
-- Execution receipts retain PHPUnit classes/datasets, Behat scenario/outline members, and configured matrix variants. Runner identity is authoritative; agents cannot invent it. Unverified runner versions require a generic bridge or full execution.
-- `discover`, `catalog show/check/sync/import`, explicit review provenance, source/context hashing, additions/removals, and migration from the legacy local catalog. Incomplete discovery cannot replace a catalog.
-- Shared descriptions can be reused across checkouts without inference. Description freshness and shared execution inputs are recorded separately.
-- `mapping import-phpunit` reads native test-attributed XML and hashes source reports. It imports positive relationships; no custom PHP parser or coverage instrumentation. Unknown identities remain visible and absent relationships do not imply irrelevance.
+- Primary graph index: CodeGraph structural tables plus source and configured target records, including unsupported languages and empty suite diagnostics. No catalog reads or review stage in the current flow.
+- `init --baseline`, immutable per-revision publication, nearest compatible ancestor reuse, and portable artifact import/export. Separate branches and checkouts cannot mutate a shared baseline.
+- Stable repository identity independent of checkout directory names. Import validates artifact integrity and source identities against the local revision; trusted storage supplies producer authentication.
+- `discover` queries indexed targets; explicit `--native` enrichment remains optional. Whole checks use `kind: "check"` and need no individual test inventory.
+- Native PHPUnit 9.6 and Behat 3.29 inventory/result contracts preserve datasets, scenarios/outlines, and matrix variants. Generic JSON contracts support other runners. Runtime identity is validated only for explicit execution.
+- Optional `mapping import-phpunit` imports positive test-attributed coverage relationships; no custom PHP parser or coverage instrumentation. Missing relationships never establish irrelevance.
 
-Validation completed: offline reuse, freshness, incomplete discovery, migration, variant identities, malformed inputs, native parser fixtures, and mapping tests. Isolated smoke tests used installed PHPUnit 9.6.34, Behat 3.29.0, and php-code-coverage 9.2.32; Xdebug produced per-test line mappings. These were synthetic tests, not a real application pilot.
+Validation completed: real CodeGraph 1.6.0 indexing and incremental reuse; source additions/renames/removals; Gherkin records without structural nodes; cross-checkout import/cache hits; branch isolation; simultaneous publication; wrong-repository, configuration, and integrity rejection. Existing synthetic runner and coverage tests remain in place.
 
-Remaining acceptance: validate a complete real suite inventory and reviewed descriptions at the chosen PR revision, verify native IDs against actual execution/results, bound discovery/indexing effort, and qualify remote-process coverage before using it. Extend the verified runner-version range through conformance fixtures. Behat HTTP coverage requires evidence from the application-serving process; local CLI coverage is insufficient. See [the command and data contracts](skills/faultline/references/shared-catalog.md).
+Remaining acceptance: validate a real suite at a chosen PR revision, verify native identities against execution/results, measure indexing effort, and qualify remote-process coverage before using it. Behat HTTP coverage requires evidence from the application-serving process; local CLI coverage is insufficient. Extend runner-version support through conformance fixtures. Legacy description catalog commands remain solely for older explicit workflows.
 
 ## Stage 2 — CodeGraph selection engine and shadow reporting
 
-The implemented report-only policy now scores all readable configured targets directly from Git, including Gherkin and JavaScript/TypeScript. No reviewed description, native runner, or structural path is required. Bounded source/diff fragments retain complete evidence identities; incomplete judgments remain would-run. This deliberately changes shadow proposals only: the stricter requirements below still apply before enabling selective execution.
+The implemented report-only policy now scores all readable configured targets directly from Git, including Gherkin and JavaScript/TypeScript, by querying the primary graph index. Graph failures retain an explicitly labeled Git fallback. No reviewed description, native runner, or structural path is required. Bounded source/diff fragments retain complete evidence identities; incomplete judgments remain would-run. This deliberately changes shadow proposals only: the stricter requirements below still apply before enabling selective execution.
 
 Implemented shadow path: exact Git source export into isolated snapshots; pinned producer/schema validation; portable closed SQLite artifacts; compatible incremental reuse; base/head reverse dependency evidence; visible source-gap and traversal-limit warnings without blocking Jev; graph-context Jev batching and immutable answer caches; automatic would-run reports and PR snapshot tracking without execution; separately opted-in execution receipts and JUnit/generic outcome recording.
 
@@ -61,8 +63,8 @@ Validated with offline contract tests and the actual CodeGraph 1.6.0 executable 
 The requirements below span the implemented shadow path and future selective execution. Exact filtering, trusted suspension state, automatic audits, broader native runner versions, and production CI trust configuration are not enabled by this stage.
 
 
-- Normalize the cumulative PR/MR diff and exact tested snapshot, including synthetic merge revisions. Freeze base/head, configuration/catalog/policy versions, evidence hashes, selected/omitted units, reasons, fallbacks, prerequisites, timings, and usage in immutable `selection.json`.
-- Expose `select`, `run --selection … --suite …`, and `record`. Reject revision/configuration/catalog mismatches before execution. Validate native identities only for the requested suite at execution; inventory disagreement or failure requires full execution and an incomplete assessment. Preserve runner exit status. Never interpret missing, empty, invalid, or interrupted decisions as permission to run zero tests.
+- Normalize the cumulative PR/MR diff and exact tested snapshot, including synthetic merge revisions. Freeze base/head, configuration/index/policy versions, evidence hashes, selected/omitted units, reasons, fallbacks, prerequisites, timings, and usage in immutable `selection.json`.
+- Expose `select`, `run --selection … --suite …`, and `record`. Reject revision/configuration/index mismatches before execution. Validate native identities only for the requested suite at execution; inventory disagreement or failure requires full execution and an incomplete assessment. Preserve runner exit status. Never interpret missing, empty, invalid, or interrupted decisions as permission to run zero tests.
 - Mandatory execution includes changed/new tests, must-run rules, positive dependency/coverage matches, relevant setup changes, unresolved failures, and uncertain units. Missing relationships are not negative evidence. Bound unknown changes by explicit scope; unbounded unknowns execute every suite.
 - Use native filtering at file/class granularity, including all associated datasets, scenarios, and variants. Validate exact selectors against discovery; unsupported filters or unresolved prerequisites widen execution. CI supplies services, containers, and scheduling.
 - Default to shadow mode: freeze the proposal and save would-run reports; do not execute tests or change CI. Full-suite evaluation requires an explicit execution request and `run --execute`. Reviewed experimental opt-in may omit only complete/current units with `P(irrelevant) >= 0.95`. This is an experimental threshold, not a calibrated safety guarantee.
@@ -85,12 +87,12 @@ Shadow reports track frozen proposals across PR snapshots and make no outcome-ba
 - Start with one ordinary PR/MR. Keep existing CI test jobs unchanged; do not scan a hundred PRs or trigger historical reruns by default. Resolve exact tested revisions/attempts with bounded, cached hosting calls.
 - Freeze decisions before outcomes exist. Collect green runs, regressions, flakes, infrastructure failures, and incomplete/expired runs. Passing retries are not automatically flakes; CI downtime is not a product regression.
 - Use the existing test runner's result/coverage producers. Qualify coverage-driver overhead and remote application attribution separately. Importer provenance must include source revision, runner variant, scope, and collection completeness.
-- Match outcome identities exactly. A known failure missing from the catalog excludes the corresponding recall claim. Unexecuted tests are unknown, never passing. Current-catalog retrospective cases disclose suite drift; retain each exact catalog snapshot.
+- Match outcome identities exactly. A known failure missing from the catalog excludes the corresponding recall claim. Unexecuted tests are unknown, never passing. Current-catalog retrospective cases disclose suite drift; retain each exact index snapshot.
 - Compare full execution, deterministic dependency/path rules, lexical selection, Jev, and the hybrid at equal execution budgets or observed recall. Preserve existing seeded-random and verified historical-order ranking baselines. Keep tuning cases apart from later assessment cases.
 - Produce Markdown and JSON reports after a single case; subsequent cases accumulate without repeated downloads/inference. Publish denominators, exclusions, and uncertainty. Repeated attempts are not independent regression cases.
 - Failing-change recall measures whether any regression is detected in a change. Failing-test recall measures the fraction of known failing tests included. Coverage is reported only from instrumentation. Savings subtract selection, setup, and audit overhead from avoided execution.
 - Report Jev usage, description/indexing effort, selection latency, execution minutes, jobs/setup avoided, and audit overhead separately. Use dated configurable pricing; external agent costs remain unknown unless supplied. Serial duration sums are estimates, not parallel CI wall-clock measurements.
-- Aggregate compatible policies across ordinary catalog evolution while preserving per-case evidence. Investigate misses after freezing and evaluating; do not rewrite evidence or retroactively tune the original prediction.
+- Aggregate compatible policies across ordinary index evolution while preserving per-case evidence. Investigate misses after freezing and evaluating; do not rewrite evidence or retroactively tune the original prediction.
 
 **Milestone 2:** reproducible evaluation of real cases with baselines, traceable classifications, reports, and limitations. One PR should yield an understandable report; a second case should join the aggregate without repeating unchanged work. A green run cannot establish regression recall or safe omission.
 

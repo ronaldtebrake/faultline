@@ -18,9 +18,11 @@ from .workflow import load_prediction, prediction_path, rank
 def parser():
     cli = argparse.ArgumentParser(prog='faultline', description='Deterministic core for the Faultline Agent Skills')
     cli.add_argument('--root', default='.', help='Target repository (defaults to the current Git root)')
-    cli.add_argument('--version', action='version', version='faultline 0.2.0')
+    cli.add_argument('--version', action='version', version='faultline 0.3.0')
     commands = cli.add_subparsers(dest='command', required=True)
-    commands.add_parser('init', help='Initialize ignored local storage and configuration')
+    init = commands.add_parser('init', help='Initialize local storage and a reusable graph baseline for a configured repository')
+    init.add_argument('--baseline', default='HEAD', help='Git revision to index once, typically the default branch')
+    init.add_argument('--reuse', type=Path, help='Trusted graph artifact to seed the baseline')
     commands.add_parser('index-status', help='List unchanged, changed, and missing profile sources')
     indexing = commands.add_parser('index', help='Validate and save a complete agent-authored catalog')
     indexing.add_argument('action', nargs='?', choices=['show'])
@@ -65,7 +67,13 @@ def main(argv=None):
             path = store.path / 'config.json'
             if not path.exists():
                 write_json(path, DEFAULTS)
-            result = {'config': str(path), 'index': str(store.path / 'index.jsonl')}
+            result = {'config': str(path), 'graph': None, 'status': 'configure faultline.json, then run init to build the graph baseline'}
+            if (store.root / 'faultline.json').exists():
+                from .tia.config import load_config
+                from .tia.graph import build
+                reuse = (store.root / args.reuse).resolve() if args.reuse else None
+                result = {'config': str(path), 'graph': build(store, load_config(store.root), args.baseline, reuse=reuse),
+                          'status': 'graph baseline ready', 'execution': 'none', 'jev_requests': 0}
         elif args.command == 'source-hash':
             result = {'source_hash': source_hash(store.root, args.source, args.context)}
         elif args.command == 'index-status':

@@ -30,7 +30,7 @@ def report_selection(store, selection):
                   'change': {k: selection['change'][k] for k in ('id', 'base', 'head')},
                   'policy_key': digest({'policy': selection['policy'], 'config': selection['config_hash'],
                                         'evaluator': selection['evaluator']}),
-                  'catalog_hash': selection['catalog_hash'], 'suites': suites,
+                  'index': selection.get('index', {}), 'suites': suites,
                   'metrics': {'known_targets': total, 'would_run': total - omitted, 'would_omit': omitted,
                               'proposed_omission_fraction': omitted / total if total and selection['inventory']['complete'] else None,
                               'suites_requiring_full_run': sum(s['would_run_full_suite'] for s in suites),
@@ -52,7 +52,9 @@ def report_selection(store, selection):
              f"Base: `{value['change']['base']}` · Head: `{value['change']['head']}`", '',
              f"Known targets: {total}. Would run: {total - omitted}. Would omit: {omitted}.", '',
              'These counts describe source files and whole checks. Regression recall, coverage, and execution-time savings are not measured.']
-    lines += ['', f"Engine: Faultline {value['engine_version']}."]
+    lines += ['', f"Engine: Faultline {value['engine_version']}. Index: {cell(value['index'].get('basis', 'unknown'))}."]
+    if value['index'].get('warning'):
+        lines += ['Index warning: ' + cell(value['index']['warning'])]
     semantic = value['semantic']
     lines += ['', f"Jev status: **{semantic.get('status', 'unknown')}**. Fully scored: {semantic.get('fully_scored', 'unknown')}; partially scored: {semantic.get('partial', 'unknown')}; unscored: {semantic.get('unscored', 'unknown')}.", '',
               'Scores use the strongest observed fragment judgment. P(irrelevant) below is the minimum across all evaluated fragment pairs, available only for complete evidence; it is not a calibrated whole-test failure probability.']

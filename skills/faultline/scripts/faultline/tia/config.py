@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import fnmatch
 import re
+import subprocess
+from urllib.parse import urlsplit
 from pathlib import Path
 
 from ..core import DEFAULTS, FaultlineError, digest, number, read_json
@@ -31,6 +33,24 @@ def inside(root, path):
     return candidate
 
 
+def repository_identity(root):
+    result = subprocess.run(['git', '-C', str(root), 'remote', 'get-url', 'origin'], capture_output=True, text=True)
+    remote = result.stdout.strip() if result.returncode == 0 else ''
+    if '://' in remote:
+        parsed = urlsplit(remote)
+        identity = (parsed.hostname or '') + '/' + parsed.path.strip('/')
+    elif re.match(r'[^/]+@[^:]+:', remote):
+        identity = remote.split('@', 1)[1].replace(':', '/', 1)
+    else:
+        # Local remotes are machine-specific; root commits identify clones of the
+        # same history without exposing paths. Explicit repository IDs override this.
+        roots = subprocess.run(['git', '-C', str(root), 'rev-list', '--max-parents=0', 'HEAD'], capture_output=True, text=True)
+        if roots.returncode:
+            raise FaultlineError('Configure a repository ID or initialize Git history first')
+        identity = '\n'.join(sorted(roots.stdout.splitlines()))
+    return 'git:' + digest(identity.removesuffix('.git'))
+
+
 def load_config(root):
     raw = read_json(root / 'faultline.json')
     if not isinstance(raw, dict) or raw.get('schema_version') != SCHEMA:
@@ -54,7 +74,7 @@ def load_config(root):
             raise FaultlineError('Graph budgets must be positive integers')
     if not isinstance(graph['extensions'], dict) or not all(isinstance(k, str) and k.startswith('.') and isinstance(v, str) and v for k, v in graph['extensions'].items()):
         raise FaultlineError('graph.extensions must map file extensions to CodeGraph language IDs')
-    config = {'graph': graph, 'schema_version': SCHEMA, 'repository': raw.get('repository', root.name),
+    config = {'graph': graph, 'schema_version': SCHEMA, 'repository': raw.get('repository') or repository_identity(root),
               'scope': strings(raw.get('scope', []), 'scope'), 'suites': [],
               'state_max_age_seconds': raw.get('state_max_age_seconds', 86400),
               'evaluator': {**DEFAULT_EVALUATOR, **raw.get('evaluator', {})}}

@@ -73,7 +73,7 @@ def text_parts(text, limit):
     return result
 
 
-def test_profile(source, unit, record, graph, suite, variant):
+def test_profile(source, unit, graph, suite, variant):
     raw = source.read(unit['source'])
     if b'\0' in raw:
         raise FaultlineError('Binary test source cannot be scored as text')
@@ -83,15 +83,6 @@ def test_profile(source, unit, record, graph, suite, variant):
         raise FaultlineError('Test source is not UTF-8 text') from None
     if not text.strip():
         raise FaultlineError('Empty test source cannot establish protected behavior')
-    description = ''
-    if record and record.get('reviewed') is True:
-        try:
-            fingerprint = {p: hashlib.sha256(source.read(p)).hexdigest() for p in unit['source_hashes']}
-            contexts = {p: hashlib.sha256(source.read(p)).hexdigest() for p in record.get('context_hashes', {})}
-            if record.get('description_hash') in (unit['description_hash'], digest({'sources': fingerprint})) and contexts == record.get('context_hashes', {}):
-                description = record['description']
-        except FaultlineError:
-            pass  # Source evidence remains usable without an optional annotation.
     paths = graph['paths'].get(unit['source'], [])
     # Retain useful symbols/edges, but keep large resolver payloads out of inference.
     graph_context = {'change_paths': [{'changed_source': p['changed_source'],
@@ -102,7 +93,7 @@ def test_profile(source, unit, record, graph, suite, variant):
                      'limitations': graph['fallbacks'], 'structural_match': bool(paths)}
     context_paths = source.glob(suite['description_inputs'])
     context = source.hashes(context_paths)
-    return {'id': unit['id'], 'source': unit['source'], 'description': description,
+    return {'id': unit['id'], 'source': unit['source'], 'description': '',
             'source_text': text, 'source_sha256': hashlib.sha256(raw).hexdigest(),
             'graph_evidence': graph_context,
             'execution_context': {'args': variant.get('args', []), 'command': suite['command'],

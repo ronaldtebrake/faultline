@@ -7,15 +7,15 @@ import time
 from pathlib import Path
 
 from ..core import FaultlineError, digest, now
-from . import catalog, graph
+from . import graph
 from .batch import BATCH_VERSION, BatchedJev
-from .common import checked, file_hash, hashes, revision, save_frozen, seal
+from .common import checked, hashes, revision, save_frozen, seal
 from .config import load_config, matches, variants
 from .mapping import covered_units
 from .. import __version__
-from .evidence import GitSources, test_profile
+from .evidence import test_profile
 
-POLICY = 'codegraph-jev-source-v4'
+POLICY = 'codegraph-primary-index-v5'
 
 
 def git_output(root, *args):
@@ -45,14 +45,10 @@ def inventory_identity(inventory):
     return digest({key: inventory[key] for key in ('head', 'config_hash', 'suites', 'execution_inputs', 'complete')})
 
 
-def records(root, inventory):
-    return {u['id']: catalog.load_record(root, u) for s in inventory['suites'] for u in s['units']}
-
-
-def decisions(root, config, inventory, context, description_records, snapshot, graph_evidence, source):
+def decisions(root, config, inventory, context, snapshot, graph_evidence, source):
     changed = context['changed_files']
     suite_configs = {key: (suite, variant) for suite, variant, key in variants(config)}
-    bounded = [*config['scope'], 'faultline.json', 'faultline/catalog/**']
+    bounded = [*config['scope'], 'faultline.json']
     bounded += [p for s in config['suites'] for p in (*s['scope'], *s['sources'], *s['shared_inputs'], *s['description_inputs'])]
     unknown = [p for p in changed if not matches(p, bounded)]
     results, profiles, evidence = [], [], {}
@@ -110,7 +106,7 @@ def decisions(root, config, inventory, context, description_records, snapshot, g
             if u.get('kind') == 'check':
                 continue
             try:
-                profiles.append(test_profile(source, u, description_records[u['id']], graph_evidence, suite, variant))
+                profiles.append(test_profile(source, u, graph_evidence, suite, variant))
             except FaultlineError as exc:
                 reasons[u['id']].append('source_evidence_unavailable')
                 evidence[u['id']] = str(exc)
@@ -123,17 +119,14 @@ def decisions(root, config, inventory, context, description_records, snapshot, g
 
 
 def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=False, evaluator=None,
-           base_graph=None, head_graph=None, build_graphs=True, native=False):
+           base_graph=None, head_graph=None, build_graphs=True, native=False, baseline=None):
     started = time.monotonic()
     store.initialize()
     config = load_config(store.root)
     context = change(store.root, base, head, identifier)
-    source = GitSources(store.root, context['head'], config['evaluator']['max_test_bytes'])
     if native and (revision(store.root) != context['head'] or not workspace(store.root)['clean']):
         raise FaultlineError('Optional native enrichment requires a clean tested checkout; omit --native for source-only analysis')
-    inventory = catalog.source_inventory(store.root, config, native=native, snapshot=source)
     snapshot = workspace(store.root)
-    descriptions = records(store.root, inventory)
     graph_started = time.monotonic()
     graph_builds = []
     if build_graphs and not dry_run:
@@ -141,16 +134,21 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
             if provided:
                 continue
             try:
-                reuse = (base_graph or graph.artifact_path(store, config, context['base'])) if side == 'head' else None
+                reuse = (base_graph or graph.artifact_path(store, config, context['base'])) if side == 'head' else baseline
                 if reuse and not Path(reuse).exists():
                     reuse = None
                 built = graph.build(store, config, context[side], reuse=reuse)
-                graph_builds.append({'snapshot': side, 'cache_hit': built['cache_hit'], 'path': built['path']})
+                graph_builds.append({'snapshot': side, 'cache_hit': built['cache_hit'], 'path': built['path'], 'reused_from': built.get('reused_from')})
             except (FaultlineError, OSError) as exc:
                 graph_builds.append({'snapshot': side, 'error': str(exc)})
+    from .graph_index import open_index, enrich
+    source, raw_inventory, index_provenance = open_index(store, config, context['head'], head_graph)
+    inventory = enrich(store.root, config, raw_inventory) if native else raw_inventory
     graph_evidence = graph.evidence(store, config, context, inventory, base_graph, head_graph)
+    if index_provenance['basis'] != 'graph':
+        graph_evidence['fallbacks'].append('graph_source_index_unavailable_using_git_fallback')
     graph_seconds = time.monotonic() - graph_started
-    suites, profiles, evidence, unknown = decisions(store.root, config, inventory, context, descriptions, snapshot, graph_evidence, source)
+    suites, profiles, evidence, unknown = decisions(store.root, config, inventory, context, snapshot, graph_evidence, source)
     evaluator = evaluator or BatchedJev(store, config['evaluator'], deadline=time.monotonic() + config['evaluator']['selection_seconds'])
     inference_started = time.monotonic()
     evaluate = evaluator.evaluate_source if isinstance(evaluator, BatchedJev) else evaluator.evaluate
@@ -158,7 +156,7 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
     inference_seconds = time.monotonic() - inference_started
     if dry_run:
         return {'dry_run': True, 'change': {k: context[k] for k in ('id', 'base', 'head', 'changed_files')},
-                'candidate_units': len(profiles), 'estimate': result, 'unknown_paths': unknown, 'graph': graph_evidence,
+                'candidate_units': len(profiles), 'estimate': result, 'index': index_provenance, 'unknown_paths': unknown, 'graph': graph_evidence,
                 'fallbacks': {s['key']: s['fallbacks'] for s in suites}, 'execution': 'none', 'mode': 'shadow'}
     for suite in suites:
         ids = set(suite['reasons'])
@@ -200,12 +198,13 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
                 required.update(suite['prerequisites'])
     # Freeze comparison policies before any outcomes are imported. Each receives
     # the same unit-count budget; lexical/path scores are deterministic baselines.
+    source_texts = {p['id']: p['source_text'] for p in profiles}
     for suite in suites:
         count = len(suite['proposed_selected'])
         units = suite['units']
         tokens = set(re.findall(r"[a-z][a-z0-9_]+", context['diff'].lower()))
         def lexical(u):
-            description = (descriptions[u['id']] or {}).get('description', u['title'])
+            description = source_texts.get(u['id'], u['title'])
             return len(tokens & set(re.findall(r"[a-z][a-z0-9_]+", description.lower())))
         suite['baselines'] = {
             'random': [u['id'] for u in sorted(units, key=lambda u: digest([context['base'], context['head'], config['evaluator']['random_seed'], u['id']]))[:count]],
@@ -235,8 +234,7 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
                      'source_provenance': {'revision': context['head'], 'configuration': 'local faultline.json', 'configuration_hash': config['config_hash']},
                      'config_hash': config['config_hash'], 'inventory': inventory,
                      'graph': graph_evidence, 'graph_builds': graph_builds,
-                     'inventory_hash': inventory_identity(catalog.source_inventory(store.root, config, snapshot=source) if native else inventory), 'catalog': descriptions,
-                     'catalog_hash': digest(descriptions), 'relationship_evidence': evidence,
+                     'inventory_hash': inventory_identity(raw_inventory), 'index': index_provenance, 'relationship_evidence': evidence,
                      'evaluator': {'model': config['evaluator']['model'], 'batch_version': BATCH_VERSION},
                      'suites': suites, 'judgments': result['rows'], 'semantic_errors': result['errors'],
                      'usage': {k: result[k] for k in ('batches', 'requests', 'cache_hits', 'uncached_requests', 'usage', 'unique_evidence_targets', 'evidence_pairs', 'scheduled_pairs', 'diff_fragments') if k in result},
@@ -254,7 +252,7 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
     from .proposals import report_selection
     proposal_report = report_selection(store, document)
     return {'report': proposal_report, 'path': str(output), 'selection_id': document['integrity'], 'complete': True,
-            'semantic_complete': document['semantic_complete'], 'semantic': semantic, 'usage': document['usage'],
+            'semantic_complete': document['semantic_complete'], 'semantic': semantic, 'index': index_provenance, 'usage': document['usage'],
             'proposed_selected': sum(len(s['proposed_selected']) for s in suites),
             'proposed_omitted': sum(len(s['proposed_omitted']) for s in suites),
             'execution': 'none', 'mode': 'shadow', 'targets': 'provisional_source_files',

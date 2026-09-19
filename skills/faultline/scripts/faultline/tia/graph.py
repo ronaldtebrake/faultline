@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -21,7 +22,7 @@ from ..core import FaultlineError, digest, now, read_json, write_json
 from .common import checked, revision, seal
 
 VERSION = '1.6.0'
-CONTRACT = 'codegraph-sqlite-1.6-v1'
+CONTRACT = 'codegraph-sqlite-1.6-index-v2'
 DEFAULTS = {'command': ['codegraph'], 'version': VERSION, 'timeout_seconds': 300,
             'max_files': 100000, 'max_source_bytes': 500000000,
             'max_edges': 2000000, 'max_depth': 16, 'max_visited': 50000,
@@ -79,6 +80,8 @@ def inspect(path, limit):
 def load(path, *, expected_revision=None, config=None, repository=None):
     path = Path(path).resolve()
     manifest = checked(path / 'manifest.json', 'codegraph')
+    if not re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', str(manifest.get('revision', ''))):
+        raise FaultlineError('Graph revision must be an exact Git object ID')
     if (manifest.get('contract') != CONTRACT or manifest.get('producer_version') != VERSION
             or not (path / 'graph.sqlite').is_file() or sha(path / 'graph.sqlite') != manifest.get('database_sha256')):
         raise FaultlineError('CodeGraph artifact version or database hash mismatch')
@@ -97,7 +100,9 @@ def settings_hash(config):
 
 
 def artifact_path(store, config, rev):
-    key = digest({'repository': config['repository'], 'revision': rev, 'settings': settings_hash(config['graph'])})
+    from .graph_index import settings_hash as index_settings_hash
+    key = digest({'repository': config['repository'], 'revision': rev, 'settings': settings_hash(config['graph']),
+                  'index': index_settings_hash(config)})
     return store.path / 'graphs' / key
 
 
@@ -144,8 +149,12 @@ def build(store, config, ref='HEAD', *, reuse=None, output=None):
     output = Path(output) if output else artifact_path(store, config, rev)
     if output.exists():
         _, saved = load(output, expected_revision=rev, config=settings, repository=config['repository'])
+        from .graph_index import settings_hash as index_settings_hash
+        if saved.get('index_settings_hash') != index_settings_hash(config):
+            raise FaultlineError('Existing graph uses different test-source configuration; use a fresh output path')
         return {'path': str(output.resolve()), 'cache_hit': True, **saved}
     store.initialize()
+    reuse = Path(reuse) if reuse else find_baseline(store, config, rev)
     if run([*settings['command'], '--version'], store.root, 15).removeprefix('codegraph ').strip() != VERSION:
         raise FaultlineError(f'Faultline requires CodeGraph {VERSION}')
     with tempfile.TemporaryDirectory(prefix='faultline-graph-') as temporary:
@@ -175,7 +184,9 @@ def build(store, config, ref='HEAD', *, reuse=None, output=None):
         target.mkdir()
         with connect(database) as original, sqlite3.connect(target / 'graph.sqlite') as dest:
             original.backup(dest)
-        value = seal({'schema_version': 2, 'kind': 'codegraph', 'created_at': now(),
+        from .graph_index import populate
+        index = populate(target / 'graph.sqlite', store.root, config, rev)
+        value = seal({**index, 'schema_version': 2, 'kind': 'codegraph', 'created_at': now(),
                       'contract': CONTRACT, 'producer_version': VERSION, 'repository': config['repository'],
                       'revision': rev, 'settings_hash': settings_hash(settings), 'upstream_config_hash': digest(upstream),
                       'database_sha256': sha(target / 'graph.sqlite'), 'sources': sources, 'files': files,
@@ -183,16 +194,8 @@ def build(store, config, ref='HEAD', *, reuse=None, output=None):
                       'edge_count': edge_count, 'reused_from': reused['integrity'] if reused else None,
                       'build_seconds': time.monotonic() - started})
         write_json(target / 'manifest.json', value)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        # Publish atomically on the destination filesystem, never merge with an existing artifact.
-        staged = Path(tempfile.mkdtemp(prefix='.graph-', dir=output.parent))
-        try:
-            shutil.copyfile(target / 'graph.sqlite', staged / 'graph.sqlite')
-            shutil.copyfile(target / 'manifest.json', staged / 'manifest.json')
-            staged.rename(output)
-        finally:
-            if staged.exists():
-                shutil.rmtree(staged)
+        publish(target, output, config, rev)
+        _, value = load(output, expected_revision=rev, config=settings, repository=config['repository'])
     return {'path': str(output.resolve()), 'cache_hit': False, **value}
 
 
@@ -257,3 +260,83 @@ def evidence(store, config, context, inventory, base_graph=None, head_graph=None
     if result['truncated']:
         result['fallbacks'].append('graph_traversal_budget_exhausted')
     return result
+
+
+def publish(source, output, config, rev):
+    """Atomic create: a concurrent valid publisher wins; never mutate its snapshot."""
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    staged = Path(tempfile.mkdtemp(prefix='.graph-', dir=output.parent))
+    try:
+        for name in ('graph.sqlite', 'manifest.json'):
+            shutil.copyfile(Path(source) / name, staged / name)
+        try:
+            staged.rename(output)
+        except OSError:
+            if not output.exists():
+                raise
+            _, saved = load(output, expected_revision=rev, config=config['graph'], repository=config['repository'])
+            incoming = checked(staged / 'manifest.json', 'codegraph')
+            if saved.get('index_settings_hash') != incoming.get('index_settings_hash'):
+                raise FaultlineError('Concurrent artifact uses incompatible index settings') from None
+    finally:
+        if staged.exists():
+            shutil.rmtree(staged)
+
+
+def find_baseline(store, config, rev):
+    """Choose the nearest compatible ancestor; branch names never identify artifacts."""
+    candidates = []
+    for path in sorted((store.path / 'graphs').glob('*/manifest.json')):
+        if path.parent.name.startswith('.'):
+            continue  # Unpublished staging directories are never reusable baselines.
+        try:
+            value = checked(path, 'codegraph')
+            if (value.get('contract') != CONTRACT or value.get('repository') != config['repository']
+                    or value.get('settings_hash') != settings_hash(config['graph'])):
+                continue
+            prior = value['revision']
+            if not re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', str(prior)):
+                continue
+            ancestor = subprocess.run(['git', '-C', str(store.root), 'merge-base', '--is-ancestor', prior, rev], capture_output=True)
+            if ancestor.returncode:
+                continue
+            distance = subprocess.run(['git', '-C', str(store.root), 'rev-list', '--count', prior + '..' + rev], capture_output=True, text=True)
+            if distance.returncode == 0:
+                candidates.append((int(distance.stdout), str(path.parent)))
+        except (FaultlineError, OSError, KeyError, ValueError):
+            continue
+    for _, candidate in sorted(candidates):
+        try:
+            load(candidate, config=config['graph'], repository=config['repository'])
+            return Path(candidate)
+        except (FaultlineError, OSError):
+            continue
+    return None
+
+
+def transfer(store, config, artifact, *, output=None):
+    """Import/export a trusted artifact directory, without indexing or network calls."""
+    path, manifest = load(artifact, config=config['graph'], repository=config['repository'])
+    from .evidence import GitSources
+    from .graph_index import CONTRACT as INDEX_CONTRACT
+    if manifest.get('index_contract') != INDEX_CONTRACT:
+        raise FaultlineError('Artifact has no supported source index; rebuild it before sharing')
+    rev = revision(store.root, manifest['revision'])
+    expected = GitSources(store.root, rev).files
+    try:
+        with connect(path / 'graph.sqlite') as db:
+            actual = {row['path']: {k: row[k] for k in ('mode', 'oid', 'size')}
+                      for row in db.execute('SELECT path,mode,oid,size FROM faultline_sources')}
+        if actual != expected:
+            raise FaultlineError('Artifact source identities do not match the local Git revision')
+    except sqlite3.Error as exc:
+        raise FaultlineError('Invalid source index in shared artifact') from exc
+    # Preserve the imported target configuration identity. It may differ from the
+    # branch configuration and still seed a freshly classified branch snapshot.
+    key = digest({'repository': config['repository'], 'revision': rev, 'settings': settings_hash(config['graph']),
+                  'index': manifest['index_settings_hash']})
+    destination = Path(output) if output else store.path / 'graphs' / key
+    publish(path, destination, config, rev)
+    _, saved = load(destination)
+    return {'path': str(destination.resolve()), **saved}

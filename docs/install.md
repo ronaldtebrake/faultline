@@ -37,9 +37,13 @@ Use one of these commands. The skill includes its Python scripts; no separate Py
 
 Ask your agent:
 
-> Use Faultline to initialize this repository, configure its test source paths. Runner commands and reviewed descriptions are optional for analysis. Use source-only discovery. Do not call Jev, invoke test runners, or start the application yet.
+> Set up Faultline for this repository. Configure its test source patterns and build a reusable CodeGraph baseline from the default branch. Reuse a trusted baseline if one is available. Do not generate a separate test catalog, call Jev, run tests, or start the application.
 
-Faultline stores suite configuration in `faultline.json` and reviewed test descriptions in `faultline/catalog/`. Share configuration and any optional descriptions with your project; they need not be committed before analysis. Local credentials, caches, and reports belong in the ignored `.faultline/` directory.
+Commit `faultline.json` to share test source patterns and policies. After configuring it, `faultline init --baseline <default-branch>` creates the primary source/test index in `.faultline/graphs/<hash>/graph.sqlite`. It includes CodeGraph relationships and file targets for tests CodeGraph cannot parse, such as Gherkin. There is no separate catalog to maintain.
+
+Each revision has an immutable snapshot. PR branches reuse the nearest compatible indexed ancestor and create their own snapshots. Teammates can import a trusted baseline with `faultline graph import <artifact-directory>`; the [workflow guide](../skills/faultline/references/graph-workflow.md#shared-baselines-and-branches) describes export/import. Local credentials, graph artifacts, caches, and reports stay in ignored `.faultline/`.
+
+If you run `init` before creating `faultline.json`, it prepares storage and asks you to configure suites; run it again after configuration to build the graph.
 
 ## 5. Configure the Jev API key
 
@@ -51,7 +55,7 @@ TYPESAFE_API_KEY="your-key"
 
 Faultline reads this file automatically, including when invoked from an IDE. Keep it out of Git and do not paste the key into your agent conversation. An existing `TYPESAFE_API_KEY` environment variable takes precedence.
 
-The key is needed for live Jev judgments. Selected change context, test descriptions, and graph evidence are sent to Jev.
+The key is needed for live Jev judgments. Selected change context, test source, and graph evidence are sent to Jev.
 
 ## 6. Try a PR or MR
 
@@ -77,4 +81,6 @@ CodeGraph is required for indexing. Your project's test runners and application 
 
 ## Updating an existing installation
 
-Reinstall/update the skill or plugin using the same method used above, then start a new agent session so it reads the new instructions. For a standalone checkout installation, reinstall from that checkout. Confirm the active engine with `faultline --version`, or `python3 "<installed-skill>/scripts/run.py" --version`: this source version is **0.2.0**. A Git-based installation receives it only after these changes are published to that Git revision.
+Reinstall/update the skill or plugin using the same method used above, then start a new agent session so it reads the new instructions. For a standalone checkout installation, reinstall from that checkout. Confirm the active engine with `faultline --version`, or `python3 "<installed-skill>/scripts/run.py" --version`: this source version is **0.3.0**. A Git-based installation receives it only after these changes are published to that Git revision.
+
+Version 0.3.0 uses a new graph artifact schema. Re-run `init --baseline <default-branch>` or import a baseline produced by this version. Old catalogs are ignored by the graph workflow; old artifacts are not overwritten.

@@ -101,7 +101,9 @@ class GraphPipelineTests(unittest.TestCase):
         db.commit()
         db.close()
         files, count = graph.inspect(path / 'graph.sqlite', 100)
-        save_frozen(path / 'manifest.json', {'schema_version': 2, 'kind': 'codegraph', 'contract': graph.CONTRACT,
+        from faultline.tia.graph_index import populate
+        index = populate(path / 'graph.sqlite', self.root, self.config, rev)
+        save_frozen(path / 'manifest.json', {**index, 'schema_version': 2, 'kind': 'codegraph', 'contract': graph.CONTRACT,
                      'producer_version': graph.VERSION, 'repository': 'fixture', 'revision': rev,
                      'settings_hash': graph.settings_hash(self.config['graph']), 'database_sha256': graph.sha(path / 'graph.sqlite'),
                      'sources': {p: 'fixture' for p in [*files, 'settings.yml']}, 'files': files,
@@ -175,7 +177,7 @@ class GraphPipelineTests(unittest.TestCase):
         with patch('faultline.tia.runners.invoke', side_effect=AssertionError('Application must stay offline')):
             result = self.selection()
             frozen = checked(Path(result['path']))
-            self.assertEqual('source', frozen['inventory']['basis'])
+            self.assertEqual('graph', frozen['inventory']['basis'])
             self.assertFalse(frozen['inventory']['suites'][0]['native_complete'])
             self.assertTrue(all(not u['members'] for u in frozen['suites'][0]['units']))
             self.assertEqual(1, result['proposed_omitted'])

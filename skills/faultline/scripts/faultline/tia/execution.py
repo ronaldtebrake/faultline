@@ -7,11 +7,10 @@ import time
 from pathlib import Path
 
 from ..core import FaultlineError, now
-from . import catalog
 from .common import checked, save_frozen, seal
 from .config import load_config, variants
 from .runners import command, discover_suite
-from .selection import POLICY, inventory_identity, records, workspace
+from .selection import POLICY, inventory_identity, workspace
 
 
 def validate(store, path):
@@ -24,10 +23,10 @@ def validate(store, path):
     current = workspace(store.root)
     if not current['clean'] or current['head'] != selection['change']['head']:
         raise FaultlineError('Execution requires a clean checkout of the selected head revision')
-    from .evidence import GitSources
-    inventory = catalog.source_inventory(store.root, config, snapshot=GitSources(store.root, selection['change']['head']))
-    if inventory_identity(inventory) != selection.get('inventory_hash') or records(store.root, inventory) != selection.get('catalog'):
-        raise FaultlineError('Source inventory or catalog changed; select again before execution')
+    from .graph_index import open_index
+    _, inventory, _ = open_index(store, config, selection['change']['head'], selection.get('index', {}).get('artifact'))
+    if inventory_identity(inventory) != selection.get('inventory_hash'):
+        raise FaultlineError('Graph source inventory changed; select again before execution')
     return selection, config
 
 

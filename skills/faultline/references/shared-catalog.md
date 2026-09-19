@@ -1,6 +1,6 @@
-# Optional shared catalogs and native mapping
+# Legacy catalogs and native mapping
 
-The default CodeGraph/Jev flow scores actual test source without requiring this catalog or native discovery. Use annotations when they improve evidence; catalog review is not a prerequisite for `select`.
+The graph database now owns the source/test index. `init`, `discover`, and `select` do not use these legacy catalog records. Read this document for explicit legacy catalog maintenance or the native discovery/coverage contracts below; new setup uses the graph workflow.
 
 Use this workflow when the repository has `faultline.json`, or when setting up shared test descriptions for the TIA engine. For CodeGraph artifacts, selection, execution, and reports, follow [the graph workflow](graph-workflow.md). These commands make no Jev requests. Default discovery lists configured source files without invoking runners or application code. Only explicit `discover --native` / `select --native` enrichment and execution-time validation invoke runner bootstraps and data providers.
 
