@@ -1,6 +1,6 @@
 # CodeGraph and Jev shadow workflow
 
-Faultline uses CodeGraph 1.6.0 for source parsing and relationships. Python owns native test identities, provenance, Jev evaluation, frozen decisions, execution validation, and reports. Only full-suite shadow execution is enabled: proposed omissions are measured, never applied to the runner command.
+Faultline uses CodeGraph 1.6.0 for source parsing and relationships. Python owns source targets, execution-time native identities, provenance, Jev evaluation, frozen decisions, execution validation, and reports. Only full-suite shadow execution is enabled: proposed omissions are measured, never applied to the runner command.
 
 ## Install and configure
 
@@ -12,7 +12,7 @@ npm install -g @colbymchenry/codegraph@1.6.0
 
 Faultline does not need CodeGraph's agent installer or MCP server. It invokes the CLI in temporary source snapshots with telemetry disabled. A missing or incompatible executable produces a full-execution fallback during selection. `graph build` reports the error directly.
 
-Use the installed `faultline` executable or `python3 "<this-skill>/scripts/run.py"` for every command below. They share the same implementation. Python 3.10+, Git, CodeGraph, and the configured native runners are required. CI does not need a coding-agent session.
+Use the installed `faultline` executable or `python3 "<this-skill>/scripts/run.py"` for every command below. They share the same implementation. Source analysis requires Python 3.10+, Git, and CodeGraph. Configured runners and the application environment are required only for execution or explicit native enrichment. CI does not need a coding-agent session.
 
 Create and commit `faultline.json`; discover/review descriptions as described in [shared catalogs](shared-catalog.md). For example:
 
@@ -40,7 +40,7 @@ Create and commit `faultline.json`; discover/review descriptions as described in
 }
 ```
 
-`repository` is a stable identifier shared across checkouts. Relative input/output paths on the new commands resolve from the analyzed repository, including when using `--root` from an IDE. Suite paths are repository-relative except `command`, which runs in the configured suite `cwd`. Declare all suites, variants, shared setup, and relevant source scopes. Incomplete inventories never establish that a suite has no tests. Playwright and unsupported native versions can use the existing generic discovery/result contracts.
+`repository` is a stable identifier shared across checkouts. Relative input/output paths on the new commands resolve from the analyzed repository, including when using `--root` from an IDE. Suite paths are repository-relative except `command`, which runs in the configured suite `cwd`. Declare all suites, variants, shared setup, and relevant source scopes. Source inventories describe configured file targets and do not establish native test completeness. See the shared-catalog guide for `kind: "check"` commands that have no individual test inventory. Playwright and unsupported native versions can use the existing generic discovery/result contracts.
 
 Graph budgets default to 300 seconds per producer invocation, 100,000 tracked files, 500 MB extracted source, 2,000,000 graph edges, traversal depth 16, 50,000 visited files, and six direct test-dependency context edges. The corresponding `graph` keys are `timeout_seconds`, `max_files`, `max_source_bytes`, `max_edges`, `max_depth`, `max_visited`, and `context_paths`. Source extraction and validation also consume time; the producer timeout is not a total end-to-end deadline. A traversal limit causes a visible full fallback. The context limit bounds prompt evidence, never the execution inventory.
 
@@ -57,11 +57,13 @@ faultline select --base <actual-diff-base-sha> --head HEAD \
   --id <pr-or-mr-id> --output .faultline/selection.json
 ```
 
-Selection automatically builds missing base/head graphs, reuses a compatible base graph for the head, performs native discovery, checks descriptions, obtains cached or new Jev judgments, and freezes the decision. Positive graph paths, changed tests, must-run rules, positive imported coverage, and uncertainty require proposed execution. Remaining units can be proposed for omission only with a current description, indexed test source, usable evidence, and `P(irrelevant) >= 0.95`.
+Selection automatically builds missing base/head graphs, reuses a compatible base graph for the head, enumerates configured source files without invoking test runners, checks descriptions, obtains cached or new Jev judgments, and freezes the decision. Positive graph paths, changed tests, must-run rules, positive imported coverage, and uncertainty require proposed execution. Remaining units can be proposed for omission only with a current description, indexed test source, usable evidence, and `P(irrelevant) >= 0.95`.
 
 Jev also scores eligible positive graph matches for inspection, but its answer cannot override mandatory execution. Unknown change scope, graph gaps in changed files, exhausted traversal budgets, incomplete inventories, stale checkout state, or incomplete semantic evaluation produce full proposals. Missing paths are not proof of irrelevance. Graphs currently traverse reverse file dependencies, retaining the producer's symbol names and resolver metadata along each path.
 
 Use `select --dry-run` to inspect restored graph evidence and estimate uncached batches without indexing or contacting Jev. Use `--no-build` to require restored graph artifacts; missing artifacts cause fallbacks. `--base-graph` and `--head-graph` accept explicit artifact directories and validate their revisions, settings, and repository identity.
+
+Native discovery is optional during analysis: add `--native` to `select` or `discover` only in a prepared runtime environment. Failures remain visible under `native_evidence` while source analysis continues. File targets are provisional; exact runtime members are collected at execution.
 
 Run each suite/variant against the frozen selection:
 
@@ -70,7 +72,7 @@ faultline run --selection .faultline/selection.json --suite unit:default \
   --junit-output .faultline/phpunit.xml --output .faultline/unit-run.json
 ```
 
-The engine revalidates the checkout, configuration, catalog, and native inventory before starting the normal full-suite command. It preserves the runner's exit code, streams its output to stderr, and writes an immutable execution receipt even when tests fail. The CLI's stdout remains JSON. PHPUnit JUnit capture uses a file; Behat capture uses a directory. Use fresh output paths for every attempt. An existing result path is refused so stale XML cannot be mistaken for the new run.
+The engine first revalidates the checkout, configuration, source inventory, and catalog. It then invokes native discovery only for the requested suite/variant, after checking prerequisites, before running the normal full-suite command, and includes that inventory in the execution receipt. If discovery fails or native files differ from the proposal, it still runs the complete suite and records validation fallbacks. Such cases cannot claim a complete assessment. Whole checks skip test enumeration. It preserves the runner's exit code, streams its output to stderr, and writes an immutable execution receipt even when tests fail. The CLI's stdout remains JSON. PHPUnit JUnit capture uses a file; Behat capture uses a directory. Use fresh output paths for every attempt. An existing result path is refused so stale XML cannot be mistaken for the new run.
 
 CI owns services, containers, matrix scheduling, and parallelism. For configured prerequisite suites, pass their successful receipts with repeated `--prerequisite <receipt.json>` arguments. Every prerequisite variant must have succeeded for the same selection. Configure result collection as an always-run CI step, so a failed test step still produces a report.
 
@@ -99,11 +101,11 @@ faultline shadow-report
 }
 ```
 
-Every member uses the exact discovered native identity, including datasets and feature-outline enumeration. Allowed statuses: `passed`, `failed`, `error`, `skipped`, `unknown`. Failure classifications: `confirmed_regression`, `flake`, `infrastructure`, `baseline`, `unknown`. A non-unknown classification requires evidence. Missing, unmatched, duplicate, and incomplete results cannot silently become passing tests. Raw execution outcomes are immutable. Repeated identical recording regenerates the report. Reviewed classifications/evidence can be revised with another `record` call without rerunning tests or Jev: the engine saves an immutable superseding observation and the aggregate uses the latest classification revision per execution.
+Every member uses the exact native identity saved in the execution receipt, including datasets and feature-outline enumeration. Reports join those members back to the frozen file proposal without rewriting it. Allowed statuses: `passed`, `failed`, `error`, `skipped`, `unknown`. Failure classifications: `confirmed_regression`, `flake`, `infrastructure`, `baseline`, `unknown`. A non-unknown classification requires evidence. Missing, unmatched, duplicate, and incomplete results cannot silently become passing tests. Raw execution outcomes are immutable. Repeated identical recording regenerates the report. Reviewed classifications/evidence can be revised with another `record` call without rerunning tests or Jev: the engine saves an immutable superseding observation and the aggregate uses the latest classification revision per execution.
 
 Suite reports show conditional recall against observed confirmed regressions. Aggregate reports require complete observations for all configured suites and group retries into one change snapshot per compatible policy. Ordinary catalog evolution does not split policy groups; configuration/evaluator changes do. A green case cannot establish recall. Reports include denominators and descriptive Wilson intervals; related changes can still be statistically dependent.
 
-Actual test execution saved in shadow mode is zero. Potential avoided time sums omitted members' durations under a serial-execution assumption and is unavailable for incomplete timing/results. Net estimates charge full selection overhead to the suite; they are not parallel CI wall-clock savings. Coverage, external agent cost, setup/job savings, and audit overhead remain unknown unless measured elsewhere. Frozen random, path, lexical, graph, and Jev baselines use the same proposed unit count; this is not an equal-runtime-budget comparison. Unscored units rank conservatively first in the Jev baseline, which is disclosed in the evidence.
+Actual test execution saved in shadow mode is zero. Potential avoided time sums omitted members' durations under a serial-execution assumption and is unavailable for incomplete timing/results. Net estimates charge full selection and runner-validation overhead to the suite; they are not parallel CI wall-clock savings. Coverage, external agent cost, setup/job savings, and audit overhead remain unknown unless measured elsewhere. Frozen random, path, lexical, graph, and Jev baselines use the same proposed unit count; this is not an equal-runtime-budget comparison. Unscored units rank conservatively first in the Jev baseline, which is disclosed in the evidence.
 
 ## Sharing artifacts and controlling cost
 

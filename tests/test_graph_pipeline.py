@@ -111,6 +111,118 @@ class GraphPipelineTests(unittest.TestCase):
     def selection(self, evaluator=None, **kw):
         return select(self.store, self.base, evaluator=evaluator or Evaluator(), build_graphs=False, **kw)
 
+
+    def test_analysis_and_catalog_commands_never_invoke_runners(self):
+        with patch('faultline.tia.runners.invoke', side_effect=AssertionError('Application must stay offline')):
+            result = self.selection()
+            frozen = checked(Path(result['path']))
+            self.assertEqual('source', frozen['inventory']['basis'])
+            self.assertFalse(frozen['inventory']['suites'][0]['native_complete'])
+            self.assertTrue(all(not u['members'] for u in frozen['suites'][0]['units']))
+            self.assertEqual(1, result['proposed_omitted'])
+            self.selection(dry_run=True)
+            with patch('builtins.print'):
+                for arguments in (['discover'], ['catalog', 'show'], ['catalog', 'check'], ['catalog', 'sync'], ['select', '--base', self.base, '--no-build', '--dry-run']):
+                    self.assertEqual(0, main(['--root', str(self.root), *arguments]))
+
+    def test_source_analysis_does_not_require_php_or_a_bootstrapped_application(self):
+        self.raw['suites'][0].update(runner='behat', command=['nonexistent-behat'])
+        del self.raw['suites'][0]['discovery_command']
+        write_json(self.root / 'faultline.json', self.raw)
+        self.commit()
+        with patch('faultline.tia.runners.invoke', side_effect=AssertionError('No runtime allowed')):
+            inventory = catalog.source_inventory(self.root, load_config(self.root))
+            self.assertTrue(inventory['complete'])
+            self.assertEqual(2, len(inventory['suites'][0]['units']))
+            result = self.selection()
+        self.assertEqual('full_shadow', result['execution'])
+
+    def test_native_enrichment_is_explicit_and_failure_keeps_source_analysis(self):
+        result = self.selection(native=True)
+        frozen = checked(Path(result['path']))
+        self.assertTrue(frozen['inventory']['suites'][0]['native_complete'])
+        self.assertEqual(['ATest::testA'], frozen['suites'][0]['units'][0]['members'])
+        with patch('faultline.tia.runners.invoke', side_effect=FaultlineError('Environment unavailable')):
+            result = self.selection(native=True)
+        frozen = checked(Path(result['path']))
+        self.assertFalse(frozen['inventory']['suites'][0]['native_complete'])
+        self.assertTrue(frozen['inventory']['suites'][0]['native_evidence']['errors'])
+        self.assertEqual(1, result['proposed_omitted'])
+
+    def test_execution_validates_only_requested_suite(self):
+        other = copy.deepcopy(self.raw['suites'][0])
+        other.update(id='unavailable', discovery_command=['absent-discovery'], command=['absent-runner'])
+        self.raw['suites'].append(other)
+        write_json(self.root / 'faultline.json', self.raw)
+        self.commit()
+        result = self.selection()
+        from faultline.tia.runners import discover_suite
+        with patch('faultline.tia.execution.discover_suite', wraps=discover_suite) as discover:
+            receipt = run_suite(self.store, result['path'], 'unit')
+        self.assertEqual(1, discover.call_count)
+        self.assertEqual('unit', discover.call_args.args[1]['id'])
+        self.assertTrue(receipt['proposal_validated'])
+        self.assertEqual(7, receipt['exit_code'])
+
+    def test_discovery_failure_during_execution_runs_full_and_reports_incomplete(self):
+        result = self.selection()
+        with patch('faultline.tia.runners.invoke', side_effect=FaultlineError('Environment unavailable')):
+            receipt = run_suite(self.store, result['path'], 'unit')
+        self.assertEqual(7, receipt['exit_code'])
+        self.assertFalse(receipt['proposal_validated'])
+        self.assertIn('native_discovery_incomplete', receipt['validation_fallbacks'])
+        self.assertEqual('full_shadow', receipt['mode'])
+        report_result = record(self.store, result['path'], receipt['path'], self.store.path / 'missing.xml', format='junit')
+        self.assertFalse(report_result['metrics']['outcomes_complete'])
+        self.assertIsNone(report_result['metrics']['potential_serial_test_seconds_avoided'])
+
+    def test_runtime_inventory_does_not_rewrite_frozen_proposal(self):
+        result = self.selection()
+        from faultline.tia.runners import discover_suite
+        native = discover_suite(self.root, self.config['suites'][0], self.config['suites'][0]['variants'][0])
+        native['units'] = native['units'][:1]
+        with patch('faultline.tia.execution.discover_suite', return_value=native):
+            receipt = run_suite(self.store, result['path'], 'unit')
+        self.assertIn('source_targets_differ_from_native_inventory', receipt['validation_fallbacks'])
+        self.assertFalse(receipt['proposal_validated'])
+        self.assertEqual(['unit:default:tests/BTest.php'], checked(Path(result['path']))['suites'][0]['proposed_omitted'])
+
+    def test_native_cross_test_dependencies_invalidate_omission_assessment(self):
+        result = self.selection()
+        from faultline.tia.runners import discover_suite
+        native = discover_suite(self.root, self.config['suites'][0], self.config['suites'][0]['variants'][0])
+        native['units'][0]['requires_full_suite'] = True
+        with patch('faultline.tia.execution.discover_suite', return_value=native):
+            receipt = run_suite(self.store, result['path'], 'unit')
+        self.assertFalse(receipt['proposal_validated'])
+        self.assertIn('native_dependencies_require_full_suite', receipt['validation_fallbacks'])
+        self.assertEqual(7, receipt['exit_code'])
+
+    def test_whole_check_needs_no_test_inventory_and_preserves_exit_status(self):
+        self.raw['suites'] = [{'id': 'static', 'kind': 'check', 'runner': 'generic',
+                              'command': [sys.executable, 'runner.py']}]
+        write_json(self.root / 'faultline.json', self.raw)
+        self.commit()
+        with patch('faultline.tia.runners.invoke', side_effect=AssertionError('Checks have no test enumeration')):
+            result = self.selection()
+            receipt = run_suite(self.store, result['path'], 'static')
+        self.assertEqual(1, result['proposed_selected'])
+        self.assertEqual(0, result['proposed_omitted'])
+        self.assertEqual(7, receipt['exit_code'])
+        failed = record(self.store, result['path'], receipt['path'])
+        self.assertEqual(1, failed['metrics']['unknown_failures'])
+        self.assertFalse(failed['metrics']['outcomes_complete'])
+        self.assertIsNone(failed['metrics']['failing_test_recall'])
+
+    def test_generic_without_native_discovery_never_uses_full_command_for_listing(self):
+        suite = copy.deepcopy(self.config['suites'][0])
+        del suite['discovery_command']
+        from faultline.tia.runners import discover_suite
+        with patch('faultline.tia.runners.invoke', side_effect=AssertionError('Must not run tests for discovery')):
+            native = discover_suite(self.root, suite, suite['variants'][0])
+        self.assertFalse(native['complete'])
+        self.assertTrue(native['errors'])
+
     def test_graph_positive_match_is_mandatory_and_jev_gets_paths(self):
         evaluator = Evaluator()
         result = self.selection(evaluator)

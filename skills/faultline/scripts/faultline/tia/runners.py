@@ -65,7 +65,7 @@ def unit(root, suite, variant, source, members, locator, title):
     fingerprint = hashes(root, [source, *glob_files(root, suite['description_inputs'])])
     return {'id': suite['id'] + ':' + variant['id'] + ':' + source,
             'source': source, 'members': sorted(members), 'locator': locator, 'title': title,
-            'description_hash': digest({'sources': fingerprint, 'members': sorted(members)}),
+            'description_hash': digest({'sources': fingerprint}),
             'source_hashes': fingerprint}
 
 
@@ -162,6 +162,8 @@ def discover_suite(root, suite, variant):
         cwd = inside(root, suite['cwd'])
         if not cwd.is_dir():
             raise FaultlineError('Suite working directory missing')
+        if suite['runner'] == 'generic' and 'discovery_command' not in suite:
+            raise FaultlineError('No native discovery configured; execute the full suite')
         if 'discovery_command' in suite:
             version = 'generic-contract-v2'
             discoverer = generic_inventory

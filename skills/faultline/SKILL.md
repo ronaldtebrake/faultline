@@ -1,22 +1,22 @@
 ---
 name: faultline
-description: Analyze test impact for a PR/MR with CodeGraph and Jev, maintain shared native test catalogs, run full-suite shadow evaluations, and explain Faultline reports. Also supports existing semantic rankings and retrospective evaluation.
+description: Analyze test impact for a PR/MR with CodeGraph and Jev, maintain shared source-based test catalogs, run full-suite shadow evaluations, and explain Faultline reports. Also supports existing semantic rankings and retrospective evaluation.
 ---
 
 # Faultline
 
 You gather repository evidence and interpret findings. Jev supplies semantic judgments. The bundled code owns questions, probability validation, scoring, cache identity, and measurements. Never replace Jev scores or reorder its ranking with your own judgment.
 
-Use [the CodeGraph workflow](references/graph-workflow.md) for new setup and PR/MR analysis. CodeGraph supplies structural relationships; native runners establish executable identities; Jev supplies relevance probabilities. All current execution is full-suite shadow execution. Never treat a graph's empty result as permission to skip tests.
+Use [the CodeGraph workflow](references/graph-workflow.md) for new setup and PR/MR analysis. CodeGraph supplies structural relationships; configured source paths identify provisional file targets; Jev supplies relevance probabilities. Native runners establish executable identities only when execution is requested. All current execution is full-suite shadow execution. Never treat a graph's empty result as permission to skip tests.
 
 Resolve `<this-skill>` to the directory containing this installed SKILL.md. Invoke `python3 "<this-skill>/scripts/run.py" --root "<repo>" ...`, or the equivalent installed `faultline` CLI. Keep generated state in the analyzed repository, not the installed skill. CodeGraph is a separate pinned CLI dependency; its MCP/agent installer is unnecessary.
 
 ## Current single-PR flow
 
-1. Inspect existing suite commands and CI variants. Configure `faultline.json` and use [native discovery and catalog review](references/shared-catalog.md). Reuse committed descriptions; update only changed tests/context. Do not invent test identities or generate descriptions automatically in CI.
+1. Inspect existing suite commands and CI variants. Configure `faultline.json` and use [source discovery and catalog review](references/shared-catalog.md). `discover`, all `catalog` commands, and `select` do not invoke test runners by default. Use `kind: "check"` for whole checks such as static analysis. Reuse committed descriptions; update only changed tests/context. Do not invent test identities or generate descriptions automatically in CI.
 2. Resolve the requested PR/MR's actual cumulative diff base and tested head using Git and available hosting tools. Work on the tested revision. Do not replace a stacked PR's base with the main branch. Reuse the user's authorized setup and scope.
-3. Run `select --base <base> --head <tested-head> --id <pr-id> --output <fresh-selection-path>`. It builds/reuses both graphs, obtains bounded Jev judgments, and freezes the proposal. Use dry-run when checking existing evidence/cost limits; it performs no indexing or API calls.
-4. For an evaluation request, continue through `run` for each configured suite/variant and `record` for each receipt. These execute tests locally in the configured environment; CI service/container orchestration stays with the project. Respect prerequisite receipts. Capture JUnit for supported native runners or import the exact generic outcome contract. Test failures must still be recorded; they do not end the reporting flow.
+3. Run `select --base <base> --head <tested-head> --id <pr-id> --output <fresh-selection-path>`. It builds/reuses both graphs, obtains bounded Jev judgments, and freezes a provisional file-level proposal. Native discovery is optional via `select --native` or `discover --native`; use it only when explicitly requested in a prepared test environment. Do not start services, install runtime dependencies, or invoke test runners merely to analyze source. Use dry-run when checking existing evidence/cost limits; it performs no indexing or API calls.
+4. For an evaluation request, continue through `run` for each configured suite/variant and `record` for each receipt. Each `run` validates only the requested suite with its runner, retains exact native members in the receipt, and executes the full suite. Discovery failure or disagreement keeps full execution and makes the assessment incomplete. Whole checks run directly without test enumeration. These commands require the prepared application environment; CI service/container orchestration stays with the project. Respect prerequisite receipts. Capture JUnit for supported native runners or import the exact generic outcome contract. Test failures must still be recorded; they do not end the reporting flow.
 5. Present the saved Markdown/JSON report and `shadow-report` aggregate. Distinguish graph paths, semantic relevance, observed regressions, and measured coverage. Surface full fallbacks, unmatched tests, incomplete data, costs, and limits. Do not claim that a green run proves omission safe.
 
 For ranking-only requests, stop after presenting the frozen proposal. For full analysis/evaluation requests, carry through reporting when the environment is available; describe concrete blockers if execution cannot proceed. Do not trigger remote CI jobs or post messages unless requested.

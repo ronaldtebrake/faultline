@@ -198,7 +198,7 @@ def build(store, config, ref='HEAD', *, reuse=None, output=None):
 
 def evidence(store, config, context, inventory, base_graph=None, head_graph=None):
     settings = config['graph']
-    unit_sources = {u['source'] for s in inventory['suites'] for u in s['units']}
+    unit_sources = {u['source'] for s in inventory['suites'] for u in s['units'] if u.get('kind') != 'check'}
     result = {'snapshots': {}, 'paths': {p: [] for p in unit_sources}, 'dependencies': {},
               'unknown_changes': [], 'unmapped_tests': [], 'fallbacks': [], 'truncated': False}
     for side, explicit in [('base', base_graph), ('head', head_graph)]:

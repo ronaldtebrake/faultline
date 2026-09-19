@@ -1,4 +1,4 @@
-"""Freeze an outcome-blind shadow selection from Git, native identities, and Jev."""
+"""Freeze an outcome-blind shadow proposal from source targets, CodeGraph, and Jev."""
 from __future__ import annotations
 
 import subprocess
@@ -13,7 +13,7 @@ from .common import checked, file_hash, hashes, revision, save_frozen, seal
 from .config import load_config, matches, variants
 from .mapping import covered_units
 
-POLICY = 'codegraph-jev-shadow-v1'
+POLICY = 'codegraph-jev-shadow-v2'
 
 
 def git_output(root, *args):
@@ -59,7 +59,7 @@ def decisions(root, config, inventory, context, description_records, snapshot, g
         reasons = {u['id']: [] for u in native['units']}
         fallbacks = list(graph_evidence['fallbacks'])
         if not native['complete']:
-            fallbacks.append('incomplete_native_inventory')
+            fallbacks.append('no_configured_source_targets')
         if snapshot['head'] != context['head'] or not snapshot['clean']:
             fallbacks.append('checkout_does_not_match_clean_tested_revision')
         if unknown:
@@ -72,6 +72,9 @@ def decisions(root, config, inventory, context, description_records, snapshot, g
             fallbacks.append('cross_test_dependencies_require_full_execution')
         for u in native['units']:
             id = u['id']
+            if u.get('kind') == 'check':
+                reasons[id].append('whole_check_requires_full_execution')
+                continue
             if graph_evidence['paths'].get(u['source']):
                 reasons[id].append('positive_code_graph_match')
             if u['source'] in graph_evidence['unmapped_tests']:
@@ -109,18 +112,19 @@ def decisions(root, config, inventory, context, description_records, snapshot, g
                                                         'test_dependencies': graph_evidence['dependencies'].get(u['source'], [])}})
         results.append({'key': native['key'], 'suite': native['suite'], 'variant': native['variant'],
                         'configured_mode': suite['mode'], 'execution': 'full',
+                        'kind': suite['kind'], 'native_complete': native['native_complete'],
                         'prerequisites': suite['prerequisites'], 'threshold': suite['irrelevant_threshold'],
                         'reasons': reasons, 'fallbacks': sorted(set(fallbacks)), 'units': native['units']})
     return results, profiles, evidence, unknown
 
 
 def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=False, evaluator=None,
-           base_graph=None, head_graph=None, build_graphs=True):
+           base_graph=None, head_graph=None, build_graphs=True, native=False):
     started = time.monotonic()
     store.initialize()
     config = load_config(store.root)
     context = change(store.root, base, head, identifier)
-    inventory = catalog.discover(store.root, config)
+    inventory = catalog.source_inventory(store.root, config, native=native)
     snapshot = workspace(store.root)
     descriptions = records(store.root, inventory)
     graph_started = time.monotonic()
@@ -168,7 +172,7 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
                 selected.append(id)
         suite['proposed_selected'] = sorted(selected)
         suite['proposed_omitted'] = sorted(omitted)
-        suite['execution_reasons'] = ['shadow_full_execution']
+        suite['execution_reasons'] = ['shadow_full_execution', 'runner_validation_required_at_execution']
         if suite['configured_mode'] == 'experimental':
             suite['execution_reasons'].append('experimental_execution_not_enabled_in_this_engine_version')
     # Proposals also retain prerequisite suites whenever a dependent proposes work.
@@ -212,7 +216,7 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
                      'repository': config['repository'], 'change': context, 'workspace': snapshot,
                      'config_hash': config['config_hash'], 'inventory': inventory,
                      'graph': graph_evidence, 'graph_builds': graph_builds,
-                     'inventory_hash': inventory_identity(inventory), 'catalog': descriptions,
+                     'inventory_hash': inventory_identity(catalog.source_inventory(store.root, config) if native else inventory), 'catalog': descriptions,
                      'catalog_hash': digest(descriptions), 'relationship_evidence': evidence,
                      'evaluator': {'model': config['evaluator']['model'], 'batch_version': BATCH_VERSION},
                      'suites': suites, 'judgments': result['rows'], 'semantic_errors': result['errors'],
@@ -222,7 +226,7 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
                      'complete': True, 'semantic_complete': result['complete'],
                      'limitations': ['Shadow proposals are experimental; all suites execute fully.',
                                      'Static graph paths and Jev relevance are not measured code coverage.',
-                                     'Native producer completeness and coverage revision are workflow attestations.',
+                                     'Source targets are provisional; executable identities are validated only during execution.',
                                      'CI must authenticate artifact producers; integrity hashes alone do not establish trust. Experimental execution is not enabled.']})
     output = output or store.path / 'selections' / document['integrity'] / 'selection.json'
     save_frozen(output, document)
@@ -230,4 +234,5 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
             'semantic_complete': document['semantic_complete'], 'usage': document['usage'],
             'proposed_selected': sum(len(s['proposed_selected']) for s in suites),
             'proposed_omitted': sum(len(s['proposed_omitted']) for s in suites),
-            'execution': 'full_shadow', 'fallbacks': {s['key']: s['fallbacks'] for s in suites}}
+            'execution': 'full_shadow', 'targets': 'provisional_source_files',
+            'native_validation': 'required_at_execution', 'fallbacks': {s['key']: s['fallbacks'] for s in suites}}

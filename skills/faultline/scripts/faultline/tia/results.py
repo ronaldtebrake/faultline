@@ -61,15 +61,15 @@ def measure(selection, suite, receipt, tests, complete):
     avoided = sum(t['duration_seconds'] for t in tests if t['id'] not in selected) if timed and complete else None
     return {'inventory_units': len(suite['units']), 'proposed_selected_units': len(selected),
             'proposed_omitted_units': len(suite['proposed_omitted']), 'observed_members': len(tests),
-            'expected_members': sum(len(u['members']) for u in suite['units']), 'outcomes_complete': complete,
+            'expected_members': sum(len(u['members']) for u in receipt['native_inventory']['units']), 'outcomes_complete': complete,
             'confirmed_regression_members': len(failures), 'caught_regression_members': len(caught),
             'failing_test_recall': len(caught) / len(failures) if failures else None,
             'failing_change_recall': int(bool(caught)) if failures else None,
-            'unknown_failures': sum(t['status'] in ('failed', 'error') and t['classification'] == 'unknown' for t in tests),
+            'unknown_failures': sum(t['status'] in ('failed', 'error') and t['classification'] == 'unknown' for t in tests) + int(suite.get('kind') == 'check' and receipt['exit_code'] != 0),
             'coverage': None, 'actual_execution_seconds': receipt['duration_seconds'],
             'actual_execution_avoided_seconds': 0, 'potential_serial_test_seconds_avoided': avoided,
-            'selection_seconds': selection['selection_seconds'],
-            'potential_serial_net_seconds': avoided - selection['selection_seconds'] if avoided is not None else None,
+            'selection_seconds': selection['selection_seconds'], 'validation_seconds': receipt['validation_seconds'],
+            'potential_serial_net_seconds': avoided - selection['selection_seconds'] - receipt['validation_seconds'] if avoided is not None else None,
             'baselines': {name: {'selected_units': len(ids), 'caught_regression_members': sum(t['id'] in ids for t in failures),
                                   'failing_test_recall': sum(t['id'] in ids for t in failures) / len(failures) if failures else None}
                           for name, ids in suite.get('baselines', {}).items()}}
@@ -88,12 +88,15 @@ def record(store, selection_path, run_path, input_path=None, *, format=None, out
             raise ValueError()
     except (ValueError, TypeError, KeyError):
         raise FaultlineError('Execution must start after the selection was frozen') from None
-    native = next(s for s in selection['inventory']['suites'] if s['key'] == receipt['suite_key'])
+    native = receipt['native_inventory']
+    whole_check = suite.get('kind') == 'check'
     input_path = input_path or receipt.get('result_path')
     format = format or receipt.get('result_format') or 'json'
-    if not input_path:
+    if not input_path and not whole_check:
         raise FaultlineError('Provide --input or use run --junit-output to capture native results')
-    if format == 'junit':
+    if whole_check and not input_path:
+        rows, unmatched, declared_complete = [], [], True
+    elif format == 'junit':
         rows, unmatched = junit(input_path, native)
         declared_complete = True
     else:
@@ -102,7 +105,7 @@ def record(store, selection_path, run_path, input_path=None, *, format=None, out
             raise FaultlineError('Results require selection_id, suite_key, and tests with exact native member IDs')
         rows, unmatched = data['tests'], []
         declared_complete = data.get('complete') is True
-    expected = {(u['id'], member) for u in suite['units'] for member in u['members']}
+    expected = {(u['id'], member) for u in native['units'] for member in u['members']}
     seen, tests = set(), []
     for row in rows:
         if not isinstance(row, dict):
@@ -123,7 +126,7 @@ def record(store, selection_path, run_path, input_path=None, *, format=None, out
         tests.append({'id': key[0], 'member': key[1], 'status': row['status'], 'classification': classification,
                       'evidence': evidence, 'duration_seconds': duration})
     tests.sort(key=lambda t: (t['id'], t['member']))
-    complete = bool(expected) and declared_complete and expected == seen and not unmatched and native['complete'] and receipt['status'] == 'completed' and all(t['status'] != 'unknown' for t in tests)
+    complete = (bool(expected) or whole_check) and receipt['proposal_validated'] and declared_complete and expected == seen and not unmatched and native['complete'] and receipt['status'] == 'completed' and all(t['status'] != 'unknown' for t in tests)
     complete = complete and selection['workspace']['clean'] and selection['workspace']['head'] == selection['change']['head']
     # A crashed process with an all-passing partial report cannot claim full observations.
     if receipt['exit_code'] and not any(t['status'] in ('failed', 'error') for t in tests):
@@ -159,10 +162,12 @@ def record(store, selection_path, run_path, input_path=None, *, format=None, out
                                    'graph_paths': selection['graph']['paths'].get(u['source'], [])} for u in suite['units']],
                         'missing': [{'id': id, 'member': member} for id, member in sorted(expected - seen)],
                         'unmatched': unmatched, 'usage': selection['usage'], 'graph': selection['graph'],
-                        'fallbacks': suite['fallbacks'], 'selection_seconds': selection['selection_seconds'],
+                        'fallbacks': sorted(set(suite['fallbacks'] + receipt['validation_fallbacks'])),
+                        'native_inventory': native, 'proposal_validated': receipt['proposal_validated'],
+                        'selection_seconds': selection['selection_seconds'],
                         'limitations': ['Static graph evidence and semantic relevance are not measured coverage.',
                                         'Shadow mode avoids no actual test execution.',
-                                        'Potential timing assumes serial tests, unchanged durations, and zero setup savings; selection overhead is charged to this suite in full.',
+                                        'Potential timing assumes serial tests, unchanged durations, and zero setup savings; selection and runner-validation overhead are charged to this suite in full.',
                                         'Agent costs, setup/jobs avoided, parallel critical-path savings, and audit overhead are not measured.',
                                         'Recall is conditional on observed confirmed regressions; unexecuted tests are not passing.']})
     save_frozen(destination, observation)

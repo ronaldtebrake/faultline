@@ -10,7 +10,7 @@ from ..core import FaultlineError, now
 from . import catalog
 from .common import checked, save_frozen, seal
 from .config import load_config, variants
-from .runners import command
+from .runners import command, discover_suite
 from .selection import POLICY, inventory_identity, records, workspace
 
 
@@ -21,9 +21,9 @@ def validate(store, path):
         raise FaultlineError('Selection policy/configuration mismatch; select again before execution')
     if workspace(store.root) != selection.get('workspace'):
         raise FaultlineError('Checkout differs from the frozen selection; select again before execution')
-    inventory = catalog.discover(store.root, config)
+    inventory = catalog.source_inventory(store.root, config)
     if inventory_identity(inventory) != selection.get('inventory_hash') or records(store.root, inventory) != selection.get('catalog'):
-        raise FaultlineError('Native inventory or catalog changed; select again before execution')
+        raise FaultlineError('Source inventory or catalog changed; select again before execution')
     return selection, config
 
 
@@ -49,6 +49,24 @@ def run_suite(store, selection_path, suite_key, *, prerequisites=(), output=None
     frozen = next((s for s in selection['suites'] if s['key'] == suite_key), None)
     if not frozen or frozen.get('execution') != 'full':
         raise FaultlineError('Unsupported execution plan; select again')
+    # Resolve only this requested suite, after checking its prerequisites. Native
+    # discovery can bootstrap the application and belongs in the execution environment.
+    validation_started = time.monotonic()
+    native = ({'key': suite_key, 'runner': suite['runner'], 'kind': 'check',
+               'complete': True, 'units': [], 'errors': []} if suite['kind'] == 'check'
+              else discover_suite(store.root, suite, variant))
+    proposed_ids = {u['id'] for u in frozen['units']}
+    native_ids = {u['id'] for u in native['units']}
+    validation_reasons = []
+    if not native['complete']:
+        validation_reasons.append('native_discovery_incomplete')
+    if suite['kind'] != 'check' and proposed_ids != native_ids:
+        validation_reasons.append('source_targets_differ_from_native_inventory')
+    if any(u.get('requires_full_suite') for u in native['units']):
+        validation_reasons.append('native_dependencies_require_full_suite')
+    validation_seconds = time.monotonic() - validation_started
+    if workspace(store.root) != selection['workspace']:
+        raise FaultlineError('Checkout changed during runner validation; select again before execution')
     argv = command(suite, variant)
     result_path = None
     if junit_output:
@@ -79,7 +97,9 @@ def run_suite(store, selection_path, suite_key, *, prerequisites=(), output=None
     receipt = seal({'schema_version': 2, 'kind': 'execution', 'selection_id': selection['integrity'],
                     'head': selection['change']['head'], 'suite_key': suite_key, 'mode': 'full_shadow',
                     'started_at': started, 'completed_at': now(), 'duration_seconds': time.monotonic() - wall,
-                    'status': status, 'exit_code': code, 'prerequisites': sorted(supplied),
+                    'status': status, 'exit_code': code,
+                    'native_inventory': native, 'validation_seconds': validation_seconds, 'proposal_validated': not validation_reasons,
+                    'validation_fallbacks': validation_reasons, 'prerequisites': sorted(supplied),
                     'result_path': str(result_path) if result_path else None, 'result_format': 'junit' if result_path else None})
     output = Path(output) if output else store.path / 'runs' / (receipt['integrity'] + '.json')
     save_frozen(output, receipt)

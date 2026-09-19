@@ -1,4 +1,4 @@
-"""Shared catalog and native evidence commands; no inference or test selection."""
+"""Source analysis, optional native evidence, and shadow execution commands."""
 from pathlib import Path
 
 from ..core import FaultlineError
@@ -28,6 +28,7 @@ def add_commands(commands):
     select.add_argument('--head-graph', type=Path)
     select.add_argument('--no-build', action='store_true', help='Use restored artifacts only; missing graphs cause full fallback')
     select.add_argument('--dry-run', action='store_true', help='Inspect cached evidence and request estimates; no indexing or API calls')
+    select.add_argument('--native', action='store_true', help='Opt into runner discovery in a prepared application environment')
     select.add_argument('--output', type=Path)
     run = commands.add_parser('run', help='Validate selection and execute a configured full suite, preserving exit status')
     run.add_argument('--selection', type=Path, required=True)
@@ -42,12 +43,13 @@ def add_commands(commands):
     record.add_argument('--format', choices=['json', 'junit'])
     record.add_argument('--output', type=Path, help='Report basename (writes .json and .md)')
     commands.add_parser('shadow-report', help='Aggregate saved shadow cases offline, grouping repeated attempts')
-    discovery = commands.add_parser('discover', help='Discover native execution units; save an inventory')
+    discovery = commands.add_parser('discover', help='List configured source targets without invoking test runners')
     discovery.add_argument('--output', type=Path)
-    shared = commands.add_parser('catalog', help='Maintain Git-shared test descriptions using fresh native discovery')
+    discovery.add_argument('--native', action='store_true', help='Enrich source targets with native runner identities')
+    shared = commands.add_parser('catalog', help='Maintain Git-shared test descriptions using source targets')
     actions = shared.add_subparsers(dest='catalog_action', required=True)
     actions.add_parser('check', help='Check reviewed descriptions against current sources and inventory')
-    actions.add_parser('show', help='Show native identities, descriptions, and freshness')
+    actions.add_parser('show', help='Show provisional source identities, descriptions, and freshness')
     sync = actions.add_parser('sync', help='Draft new/changed descriptions and remove absent units')
     sync.add_argument('--legacy', type=Path, help='Migrate descriptions from a local index.jsonl; review is required')
     review = actions.add_parser('import', help='Import reviewed descriptions for discovered units')
@@ -82,7 +84,7 @@ def dispatch(store, args):
     if args.command == 'select':
         from .selection import select
         return select(store, args.base, args.head, identifier=args.id, output=args.output, dry_run=args.dry_run,
-                      base_graph=args.base_graph, head_graph=args.head_graph, build_graphs=not args.no_build)
+                      base_graph=args.base_graph, head_graph=args.head_graph, build_graphs=not args.no_build, native=args.native)
     if args.command == 'run':
         from .execution import run_suite
         return run_suite(store, args.selection, args.suite, prerequisites=args.prerequisite, output=args.output, junit_output=args.junit_output)
@@ -102,7 +104,7 @@ def dispatch(store, args):
                 'tests': len(document['tests']), 'files': len(document['files']),
                 'relationships': len(document['edges']), 'limitations': document['limitations']}
     config = load_config(store.root)
-    inventory = catalog.discover(store.root, config)
+    inventory = catalog.source_inventory(store.root, config, native=getattr(args, 'native', False))
     if args.command == 'discover':
         store.initialize()
         output = args.output or store.path / 'inventories' / (inventory['integrity'] + '.json')

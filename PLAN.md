@@ -4,7 +4,7 @@
 
 Build a language-agnostic test impact analysis engine for CI and coding agents. Combine deterministic positive impact evidence with Jev relevance judgments to reduce CI work while preserving observed regression detection. Semantic relevance, regression recall, and measured code coverage are separate metrics. No policy guarantees preservation of all coverage.
 
-The Python engine owns discovery validation, scoring, selection, caching, execution, and reporting. CodeGraph 1.6.0 owns structural parsing/resolution and its embedded SQLite graph. Faultline snapshots both base and head, reuses immutable artifacts, and joins reverse file relationships to native runner inventories. Existing coverage tooling is optional positive enrichment; do not build a language parser stack. The skill supports setup, reviewed descriptions, local use, and explanations. CI requires the engine and test environment, not a coding-agent session.
+The Python engine owns discovery validation, scoring, selection, caching, execution, and reporting. CodeGraph 1.6.0 owns structural parsing/resolution and its embedded SQLite graph. Faultline snapshots both base and head, reuses immutable artifacts, and joins reverse file relationships to provisional targets from configured source paths. Analysis never invokes native runners by default; native enrichment is explicit, and mandatory runner validation occurs only for the suite being executed. Existing coverage tooling is optional positive enrichment; do not build a language parser stack. The skill supports setup, reviewed descriptions, local use, and explanations. CI requires the engine and test environment, not a coding-agent session.
 
 Git shares `faultline.json` and `faultline/catalog/`. Ignored `.faultline/` holds credentials, native evidence, predictions, caches, and reports. Bootstrap descriptions once from readable test names/steps; use an agent only where enrichment helps. Developers review changed descriptions with their tests. Production changes affect execution without necessarily invalidating descriptions. Missing descriptions require execution, never automatic AI generation in CI.
 
@@ -15,7 +15,7 @@ flowchart TD
     DEV["Developer + coding agent: maintain descriptions"] --> GIT["Git: code, suite configuration, catalog"]
     GIT --> CI["CI checks out tested revision"]
     CI --> GRAPH["CodeGraph: exact base/head graph artifacts"]
-    GRAPH --> DISC["discover + catalog check"]
+    GRAPH --> DISC["Source discovery + catalog check (no runners)"]
     DEV --> LOCAL["Optional local engine use"]
     DISC --> SELECT["select: mandatory rules + semantic judgments"]
     LOCAL --> SELECT
@@ -23,7 +23,7 @@ flowchart TD
     STORE["Trusted CI cache artifacts"] --> SELECT
     STORE --> GRAPH
     SELECT --> FROZEN["Frozen selection.json"]
-    FROZEN --> RUN["run: full suite in shadow mode"]
+    FROZEN --> RUN["run: validate requested runner, then full suite"]
     RUN --> RUNNERS["PHPUnit / Behat; Playwright next"]
     RUNNERS --> REPORT["record + shadow-report: outcomes, misses, time, costs"]
     REPORT --> STORE
@@ -38,8 +38,9 @@ Git/hosting tooling supplies cumulative PR/MR changes, tested revisions, and out
 
 Implemented:
 
+- Source-only `discover`, catalog maintenance, and `select`; explicit `--native` enrichment. Whole checks use `kind: "check"` and need no individual test inventory.
 - Versioned configuration and generic JSON discovery; native PHPUnit 9.6 list XML plus Composer class-map discovery, and Behat 3.29 dry-run JUnit discovery.
-- File units preserve PHPUnit classes/datasets, Behat scenario/outline members, and configured matrix variants. Runner identity is authoritative; agents cannot invent it. Unverified runner versions require a generic bridge or full execution.
+- Execution receipts retain PHPUnit classes/datasets, Behat scenario/outline members, and configured matrix variants. Runner identity is authoritative; agents cannot invent it. Unverified runner versions require a generic bridge or full execution.
 - `discover`, `catalog show/check/sync/import`, explicit review provenance, source/context hashing, additions/removals, and migration from the legacy local catalog. Incomplete discovery cannot replace a catalog.
 - Shared descriptions can be reused across checkouts without inference. Description freshness and shared execution inputs are recorded separately.
 - `mapping import-phpunit` reads native test-attributed XML and hashes source reports. It imports positive relationships; no custom PHP parser or coverage instrumentation. Unknown identities remain visible and absent relationships do not imply irrelevance.
@@ -58,7 +59,7 @@ The requirements below span the implemented shadow path and future selective exe
 
 
 - Normalize the cumulative PR/MR diff and exact tested snapshot, including synthetic merge revisions. Freeze base/head, configuration/catalog/policy versions, evidence hashes, selected/omitted units, reasons, fallbacks, prerequisites, timings, and usage in immutable `selection.json`.
-- Expose `select`, `run --selection … --suite …`, and `record`. Reject revision/configuration/catalog/selector mismatches before execution. Preserve runner exit status. Never interpret missing, empty, invalid, or interrupted decisions as permission to run zero tests.
+- Expose `select`, `run --selection … --suite …`, and `record`. Reject revision/configuration/catalog mismatches before execution. Validate native identities only for the requested suite at execution; inventory disagreement or failure requires full execution and an incomplete assessment. Preserve runner exit status. Never interpret missing, empty, invalid, or interrupted decisions as permission to run zero tests.
 - Mandatory execution includes changed/new tests, must-run rules, positive dependency/coverage matches, relevant setup changes, unresolved failures, and uncertain units. Missing relationships are not negative evidence. Bound unknown changes by explicit scope; unbounded unknowns execute every suite.
 - Use native filtering at file/class granularity, including all associated datasets, scenarios, and variants. Validate exact selectors against discovery; unsupported filters or unresolved prerequisites widen execution. CI supplies services, containers, and scheduling.
 - Default to shadow mode: freeze the proposal, then run everything. Reviewed experimental opt-in may omit only complete/current units with `P(irrelevant) >= 0.95`. This is an experimental threshold, not a calibrated safety guarantee.

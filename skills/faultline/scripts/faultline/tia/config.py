@@ -74,20 +74,22 @@ def load_config(root):
             raise FaultlineError('pricing requires as_of and input_usd_per_million')
         number(price.get('input_usd_per_million'), 'input_usd_per_million', allow_zero=True)
     seen = set()
-    allowed = {'id', 'runner', 'command', 'cwd', 'sources', 'scope', 'shared_inputs',
+    allowed = {'kind', 'id', 'runner', 'command', 'cwd', 'sources', 'scope', 'shared_inputs',
                'description_inputs', 'must_run', 'prerequisites', 'variants', 'mode',
                'irrelevant_threshold', 'discovery_command', 'selection_command', 'timeout_seconds',
                'relationships', 'path_map', 'result_format', 'autoload'}
     for value in raw['suites']:
         if not isinstance(value, dict) or set(value) - allowed:
             raise FaultlineError('Unknown or malformed suite configuration')
-        suite = {'cwd': '.', 'sources': [], 'scope': [], 'shared_inputs': [], 'description_inputs': [],
+        suite = {'kind': 'tests', 'cwd': '.', 'sources': [], 'scope': [], 'shared_inputs': [], 'description_inputs': [],
                  'must_run': [], 'prerequisites': [], 'mode': 'shadow', 'irrelevant_threshold': .95,
                  'timeout_seconds': 600, 'variants': [{'id': 'default', 'args': []}],
                  'relationships': [], 'path_map': {}, 'autoload': 'vendor/autoload.php', **value}
         if not isinstance(suite.get('id'), str) or not re.fullmatch(r'[A-Za-z0-9_-]+', suite['id']) or suite['id'] in seen:
             raise FaultlineError('Suite IDs must be unique letters/digits/underscore/hyphen')
         seen.add(suite['id'])
+        if suite['kind'] not in ('tests', 'check'):
+            raise FaultlineError('kind must be tests or check')
         if suite.get('runner') not in ('phpunit', 'behat', 'playwright', 'generic'):
             raise FaultlineError('runner must be phpunit, behat, playwright, or generic')
         if not strings(suite.get('command'), 'command'):
@@ -104,8 +106,6 @@ def load_config(root):
             if key in suite:
                 if not strings(suite[key], key):
                     raise FaultlineError(key + ' cannot be empty')
-        if suite['runner'] == 'generic' and 'discovery_command' not in suite:
-            raise FaultlineError('Generic runners require discovery_command')
         if suite['mode'] not in ('shadow', 'experimental'):
             raise FaultlineError('mode must be shadow or experimental')
         number(suite['timeout_seconds'], 'timeout_seconds')

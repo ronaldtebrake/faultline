@@ -2,7 +2,7 @@
 
 ## 1. Check the prerequisites
 
-You need Python 3.10+, Git, Node.js/npm, and a coding agent that supports Agent Skills. Your project's test runners and dependencies should already be installed.
+You need Python 3.10+, Git, Node.js/npm, and a coding agent that supports Agent Skills. Test runners and application dependencies are needed when you execute tests; they are not required for source analysis.
 
 Faultline is currently private, so your GitHub account needs access to the repository through SSH.
 
@@ -37,7 +37,7 @@ Use one of these commands. The skill includes its Python scripts; no separate Py
 
 Ask your agent:
 
-> Use Faultline to initialize this repository, configure its test suites, and prepare the shared test catalog. Do not call Jev or run tests yet.
+> Use Faultline to initialize this repository, configure its source paths and suite commands, and prepare the shared test catalog. Use source-only discovery. Do not call Jev, invoke test runners, or start the application yet.
 
 Faultline stores suite configuration in `faultline.json` and reviewed test descriptions in `faultline/catalog/`. Commit these with your project. Local credentials, caches, and reports belong in the ignored `.faultline/` directory.
 
@@ -73,4 +73,4 @@ python3 -m venv ~/.venvs/faultline
 ~/.venvs/faultline/bin/faultline --help
 ```
 
-CodeGraph and your project's test runners are still required. For CI, pin the installation to a reviewed Git commit. Follow the same project configuration and API-key setup above, then use the commands in the [workflow guide](../skills/faultline/references/graph-workflow.md).
+CodeGraph is required for indexing. Your project's test runners and application environment are required for execution. For CI, pin the installation to a reviewed Git commit. Follow the same project configuration and API-key setup above, then use the commands in the [workflow guide](../skills/faultline/references/graph-workflow.md).

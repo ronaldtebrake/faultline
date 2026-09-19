@@ -15,6 +15,55 @@ def discover(root, config):
                  'execution_inputs': hashes(root, inputs), 'complete': all(s['complete'] for s in suites)})
 
 
+def source_inventory(root, config, *, native=False):
+    """Enumerate configured source targets without loading the application.
+
+    complete describes enumeration of configured paths, never native completeness.
+    Optional native evidence enriches matching files without narrowing the universe.
+    """
+    suites, files_cache, hashes_cache = [], {}, {}
+    for suite, variant, key in variants(config):
+        patterns = tuple(suite['sources'])
+        if patterns not in files_cache:
+            files_cache[patterns] = glob_files(root, patterns)
+        sources = files_cache[patterns]
+        whole = suite['kind'] == 'check'
+        if whole:
+            sources = ['faultline.json']
+        units = []
+        for source in sources:
+            identity = (source, tuple(suite['description_inputs']))
+            if identity not in hashes_cache:
+                hashes_cache[identity] = hashes(root, [source, *glob_files(root, suite['description_inputs'])])
+            fingerprint = hashes_cache[identity]
+            units.append({'id': key + ':' + ('__suite__' if whole else source),
+                          'source': source, 'members': [], 'locator': {'file': source},
+                          'title': suite['id'] if whole else source,
+                          'kind': 'check' if whole else 'source',
+                          'description_hash': digest({'sources': fingerprint}),
+                          'source_hashes': fingerprint})
+        row = {'key': key, 'suite': suite['id'], 'variant': variant['id'], 'runner': suite['runner'],
+               'kind': suite['kind'], 'complete': bool(units), 'units': units,
+               'errors': [] if units else ['no_configured_source_targets'], 'native_complete': False}
+        if native and not whole:
+            evidence = discover_suite(root, suite, variant)
+            row['native_evidence'] = evidence
+            row['native_complete'] = evidence['complete']
+            by_source = {u['source']: u for u in evidence['units']}
+            for unit in units:
+                if unit['source'] in by_source:
+                    found = by_source[unit['source']]
+                    for field in ('members', 'locator', 'title', 'requires_full_suite'):
+                        if field in found:
+                            unit[field] = found[field]
+        suites.append(row)
+    inputs = ['faultline.json', *glob_files(root, [p for s in config['suites'] for p in s['shared_inputs']])]
+    return seal({'schema_version': SCHEMA, 'kind': 'inventory', 'basis': 'source',
+                 'native_enrichment': native, 'created_at': now(), 'head': revision(root),
+                 'config_hash': config['config_hash'], 'suites': suites,
+                 'execution_inputs': hashes(root, inputs), 'complete': all(s['complete'] for s in suites)})
+
+
 def path_for(root, unit):
     return root / 'faultline' / 'catalog' / (digest(unit['id']) + '.json')
 
@@ -48,8 +97,8 @@ def check(root, inventory):
     for suite in inventory['suites']:
         for u in suite['units']:
             record = load_record(root, u)
-            rows.append({'id': u['id'], 'status': 'current' if fresh(root, u, record) else ('missing' if not record else 'stale_or_unreviewed')})
-    return {'complete': inventory['complete'] and all(r['status'] == 'current' for r in rows), 'units': rows}
+            rows.append({'id': u['id'], 'status': 'not_required' if u.get('kind') == 'check' else 'current' if fresh(root, u, record) else ('missing' if not record else 'stale_or_unreviewed')})
+    return {'complete': inventory['complete'] and all(r['status'] in ('current', 'not_required') for r in rows), 'units': rows}
 
 
 def sync(root, inventory, *, legacy=None):
@@ -64,6 +113,8 @@ def sync(root, inventory, *, legacy=None):
     expected = set()
     for suite in inventory['suites']:
         for u in suite['units']:
+            if u.get('kind') == 'check':
+                continue
             path = path_for(root, u)
             expected.add(path)
             prior = load_record(root, u)
@@ -74,7 +125,7 @@ def sync(root, inventory, *, legacy=None):
             write_json(path, {'schema_version': SCHEMA, 'id': u['id'], 'source': u['source'],
                              'description': description, 'description_hash': u['description_hash'],
                              'context_hashes': (prior or {}).get('context_hashes', {}), 'reviewed': False,
-                             'provenance': {'method': 'legacy-migration' if old else 'native-inventory-draft'}})
+                             'provenance': {'method': 'legacy-migration' if old else 'source-inventory-draft'}})
             drafted += 1
     removed = 0
     for path in (root / 'faultline/catalog').glob('*.json'):
