@@ -23,10 +23,10 @@ def validate(store, path):
     current = workspace(store.root)
     if not current['clean'] or current['head'] != selection['change']['head']:
         raise FaultlineError('Execution requires a clean checkout of the selected head revision')
-    from .graph_index import open_index
-    _, inventory, _ = open_index(store, config, selection['change']['head'], selection.get('index', {}).get('artifact'))
+    from .source_index import open_index
+    _, inventory, _ = open_index(store, config, selection['change']['head'])
     if inventory_identity(inventory) != selection.get('inventory_hash'):
-        raise FaultlineError('Graph source inventory changed; select again before execution')
+        raise FaultlineError('Git source inventory changed; select again before execution')
     return selection, config
 
 

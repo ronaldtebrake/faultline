@@ -6,8 +6,9 @@ from unittest.mock import Mock, patch
 
 from faultline.core import DEFAULTS, FaultlineError, Store
 from faultline.credentials import api_key
-from faultline.jev import JevEvaluator, LEVELS
-from faultline.network import Budget
+from faultline.jev import LEVELS
+from faultline.tia.batch import BatchedJev
+from faultline.tia.config import DEFAULT_EVALUATOR
 
 
 class CredentialTests(unittest.TestCase):
@@ -47,15 +48,15 @@ class CredentialTests(unittest.TestCase):
             self.assertNotIn('secret', str(caught.exception))
 
     def test_live_evaluator_loads_from_analyzed_repository_lazily(self):
-        evaluator = JevEvaluator(self.store, DEFAULTS, Budget(1))
+        evaluator = BatchedJev(self.store, DEFAULT_EVALUATOR)
         (self.store.path / '.env').write_text('TYPESAFE_API_KEY=local-secret\n')
-        response = {'model': DEFAULTS['model'], 'answers': {'relevance': {
+        response = {'model': DEFAULTS['model'], 'answers': {'q0': {
             'type': 'choice', 'choice': 'direct',
             'probabilities': {level: float(level == 'direct') for level in LEVELS}}}}
-        with patch('faultline.jev.HTTP') as transport:
+        with patch('faultline.tia.batch.HTTP') as transport:
             transport.return_value.request.return_value = (response, {})
-            result = evaluator.evaluate({'diff': 'change'}, {'id': 'test', 'source': 'test.py', 'description': 'behavior'})
+            result = evaluator.evaluate({'diff': 'change'}, [{'id': 'test', 'source': 'test.py', 'description': 'behavior'}])
             self.assertEqual('local-secret', transport.call_args.args[3])
-            self.assertEqual(4, result['score'])
+            self.assertEqual(4, result['rows']['test']['score'])
             self.assertNotIn('local-secret', str(transport.return_value.request.call_args))
             self.assertNotIn('local-secret', str(result))

@@ -6,8 +6,18 @@ from .common import checked, save_frozen, seal
 from .proposals import cell
 
 
-def assess(store, benchmark_path, outcomes_path, output=None):
+def assess(store, benchmark_path, outcomes_path, output=None, *, policy_comparison=None):
     case = checked(Path(benchmark_path), 'benchmark')
+    comparison = None
+    if policy_comparison:
+        from .benchmark_policies import compare
+        from .benchmark_report import routing_data
+        comparison = read_json(Path(policy_comparison))
+        if not isinstance(comparison, dict) or comparison.get('benchmark_id') != case['integrity']:
+            raise FaultlineError('Policy comparison must name this exact frozen benchmark')
+        expected_comparison = compare(case, routing_data(case), thresholds=comparison.get('thresholds'), budgets=comparison.get('file_budgets'))
+        if comparison != expected_comparison:
+            raise FaultlineError('Policy comparison does not match the frozen evidence and parameters; regenerate before inspecting outcomes')
     data = read_json(Path(outcomes_path))
     if not isinstance(data, dict) or data.get('schema_version') != 2 or data.get('benchmark_id') != case['integrity']:
         raise FaultlineError('Outcomes must name this exact frozen benchmark_id and schema_version 2')
@@ -66,9 +76,38 @@ def assess(store, benchmark_path, outcomes_path, output=None):
                               if outcomes_complete and all(t['duration_seconds'] is not None for t in tests) else None,
                           'raw_ranking_recall_at_units': {str(n): sum(t['unit_id'] in set(ranking[:n]) for t in regressions) / len(regressions)
                                                          if eligible and regressions else None for n in cuts}}
+    alternatives = {}
+    if comparison:
+        for scenario in comparison['scenarios']:
+            for arm, proposal in scenario['approaches'].items():
+                selected = {id for id, action in proposal['actions'].items() if action == 'RUN'}
+                caught = [t for t in regressions if t['unit_id'] in selected]
+                key = scenario['id'] + ':' + arm
+                alternatives[key] = {
+                    'scenario': scenario['label'], 'approach': arm, 'selected_units': len(selected),
+                    'known_regression_tests': len(regressions), 'caught_regression_tests': len(caught),
+                    'missed_regression_tests': [{k:t[k] for k in ('unit_id','test_id','evidence')} for t in regressions if t['unit_id'] not in selected],
+                    'failing_change_recall': int(bool(caught)) if eligible and regressions else None,
+                    'failing_test_recall': len(caught)/len(regressions) if eligible and regressions else None,
+                    'potential_serial_test_seconds_avoided': sum(t['duration_seconds'] for t in tests if t['unit_id'] not in selected)
+                        if outcomes_complete and all(t['duration_seconds'] is not None for t in tests) else None}
     detections = [{k: t[k] for k in ('unit_id', 'test_id', 'evidence')} | {
         'caught_by': [name for name, p in case['policies'].items() if t['unit_id'] in p['would_run']]}
         for t in regressions]
+    observed_failures = []
+    for test in tests:
+        if test['status'] != 'failed':
+            continue
+        unit = test['unit_id']
+        observed_failures.append({
+            'unit_id': unit, 'test_id': test['test_id'], 'failure_kind': test['failure_kind'],
+            'evidence': test.get('evidence'),
+            'actions': {name: ('UNMAPPED' if unit not in ids else 'RUN' if unit in p['would_run'] else 'OMIT')
+                        for name, p in case['policies'].items()},
+            'counterfactual_actions': {
+                scenario['id'] + ':' + arm: proposal['actions'].get(unit, 'UNMAPPED')
+                for scenario in comparison['scenarios'] for arm, proposal in scenario['approaches'].items()
+            } if comparison else {}})
     document = seal({'schema_version': 2, 'kind': 'benchmark-assessment', 'created_at': now(),
                      'benchmark_id': case['integrity'], 'benchmark_contract': case['contract'],
                      'repository': case['repository'], 'change': {k:case['change'][k] for k in ('id', 'base', 'head')},
@@ -76,8 +115,10 @@ def assess(store, benchmark_path, outcomes_path, output=None):
                      'outcomes_hash': digest(data), 'outcomes': data, 'outcomes_complete': outcomes_complete,
                      'benchmark_complete': case['complete'], 'eligible_for_recall': eligible,
                      'unmatched_units': unmatched, 'missing_units': missing_units, 'policies': policies,
-                     'regression_detections': detections, 'status_counts': statuses, 'failure_counts': failures,
+                     'regression_detections': detections, 'observed_failure_detections': observed_failures,
+                     'status_counts': statuses, 'failure_counts': failures,
                      'unknown_failures': sum(t['status'] == 'failed' and t['failure_kind'] == 'unknown' for t in tests),
+                     'policy_comparison_id': comparison['comparison_id'] if comparison else None, 'counterfactual_policies': alternatives,
                      'coverage': None, 'measured_ci_savings_seconds': None,
                      'limitations': ['Outcome blindness and native inventory completeness are producer declarations, not independently proven by this importer.',
                                      'A green run has no regression denominator. Unknown, skipped, or unexecuted tests are not passing tests.',
@@ -93,12 +134,30 @@ def assess(store, benchmark_path, outcomes_path, output=None):
              '| --- | --- | --- | --- | --- |']
     for name, m in policies.items():
         lines.append(f"| {name} | {m['selected_units']} | {m['caught_regression_tests']}/{m['known_regression_tests']} | {m['failing_change_recall']} | {m['failing_test_recall']} |")
+    lines += ['', '## Observed failed tests', '',
+              'These actions describe observed failures, including unclassified failures. They do not establish which failures were caused by the change.', '',
+              '| Unit | Native test | Classification | Jev |',
+              '| --- | --- | --- | --- |']
+    for failure in observed_failures:
+        lines.append('| ' + ' | '.join(cell(value) for value in [failure['unit_id'], failure['test_id'], failure['failure_kind'],
+                     *(failure['actions'][name] for name in ('jev',))]) + ' |')
+    if not observed_failures:
+        lines.append('No failed tests were supplied; this does not establish that unreported tests passed.')
+    lines += ['', 'The assessment JSON retains evidence and per-policy actions for every supplied failed test. UNMAPPED means the result cannot be linked to a configured unit.', '']
     lines += ['', '## Confirmed regression detections', '', '| Unit | Native test | Caught by |', '| --- | --- | --- |']
     for t in detections:
         lines.append(f"| {cell(t['unit_id'])} | {cell(t['test_id'])} | {cell(', '.join(t['caught_by']) or 'none')} |")
-    lines += ['', '## Equal-sized raw rankings', '', '| Top units | CodeGraph recall | Jev recall | Hybrid recall |', '| --- | --- | --- | --- |']
-    for cut in policies['codegraph']['raw_ranking_recall_at_units']:
-        lines.append('| ' + ' | '.join([cut, *(str(policies[name]['raw_ranking_recall_at_units'][cut]) for name in ('codegraph', 'jev', 'hybrid'))]) + ' |')
+    lines += ['', '## Equal-sized raw rankings', '', '| Top units | Jev recall |', '| --- | --- |']
+    for cut in policies['jev']['raw_ranking_recall_at_units']:
+        lines.append('| ' + ' | '.join([cut, *(str(policies[name]['raw_ranking_recall_at_units'][cut]) for name in ('jev',))]) + ' |')
+    if alternatives:
+        lines += ['', '## Previously frozen policy experiments', '',
+                  '| Policy | Approach | RUN files | Known regression tests caught | Failing-test recall | Potential serial seconds avoided |',
+                  '| --- | --- | ---: | ---: | --- | --- |']
+        for metrics in alternatives.values():
+            lines.append('| ' + ' | '.join(map(str, [metrics['scenario'], metrics['approach'], metrics['selected_units'],
+                f"{metrics['caught_regression_tests']}/{metrics['known_regression_tests']}", metrics['failing_test_recall'], metrics['potential_serial_test_seconds_avoided']])) + ' |')
+        lines += ['', 'Exact missed native tests and their evidence are retained in the assessment JSON. Missing/contaminated evidence suppresses recall for every policy; repeated thresholds are not independent cases.', '']
     lines += ['', '## Observed outcomes', '',
               'Native test statuses: ' + ', '.join(f'{name}: {count}' for name, count in statuses.items()) + '.',
               'Failed-test classifications: ' + ', '.join(f'{name}: {count}' for name, count in failures.items()) + '.', '',
@@ -113,4 +172,4 @@ def assess(store, benchmark_path, outcomes_path, output=None):
     lines += ['', *('- ' + t for t in document['limitations'])]
     write_text(path.with_suffix('.md'), '\n'.join(lines) + '\n')
     return {'json': str(path.resolve()), 'markdown': str(path.with_suffix('.md').resolve()),
-            'complete': outcomes_complete, 'eligible_for_recall': eligible, 'policies': policies, 'execution': 'none'}
+            'complete': outcomes_complete, 'eligible_for_recall': eligible, 'policies': policies, 'counterfactual_policies': alternatives, 'execution': 'none'}

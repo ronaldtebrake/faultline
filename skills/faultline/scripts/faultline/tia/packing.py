@@ -38,12 +38,9 @@ class SourcePlan:
         if len(json.dumps(context.get('changed_files', [])).encode()) > self.config['max_state_bytes'] // 8:
             context['changed_files'] = {'count': len(self.context['changed_files']),
                                         'sha256': digest(self.context['changed_files']), 'details': 'see diff fragments'}
-        graph = profile['graph_evidence']
-        if len(json.dumps(graph).encode()) > self.config['max_state_bytes'] // 8:
-            graph = {'structural_match': graph.get('structural_match', False), 'details_omitted': 'graph_context_byte_budget'}
         id = f"{key}:d{diff['start_byte']}-{diff['end_byte']}:t{source['start_byte']}-{source['end_byte']}"
         test = {'id': id, 'source': profile['source'], 'description': profile['description'],
-                'source_evidence': source, 'execution_context': profile['execution_context'], 'graph_evidence': graph}
+                'source_evidence': source, 'execution_context': profile['execution_context']}
         return context, test
 
     def pairs(self, key, group):
@@ -84,7 +81,7 @@ class SourcePlan:
             key, group = item
             p = group['profile']
             return (p['source'] not in self.context.get('changed_files', []),
-                    not p['graph_evidence'].get('structural_match', False), len(p['source_text'].encode()), p['source'], key)
+                    len(p['source_text'].encode()), p['source'], key)
         def pack(cohort):
             # Finish a bounded cohort across ALL its change windows. Sharing each
             # window avoids repeating the diff once per test; limiting cohort size

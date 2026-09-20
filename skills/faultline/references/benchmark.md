@@ -1,86 +1,95 @@
-# Reference benchmark
+# Benchmark one PR or MR with Jev
 
-Use this workflow to establish what CodeGraph and Jev contribute before changing retrieval, evidence size, or selection behavior. The commands use the installed `faultline` CLI; an agent can invoke the same commands through `python3 "<this-skill>/scripts/run.py" --root "<repo>"`.
+Use the installed `faultline` CLI or `python3 "<this-skill>/scripts/run.py" --root "<repo>"`. Configure actual test paths using [the source workflow](workflow.md).
 
-## Prepare one PR or MR
+## Gather context or retain a diff-only baseline
 
-Configure test source patterns and variants in `faultline.json` using [the setup reference](graph-workflow.md). Resolve the cumulative change's actual diff base and tested head through existing Git/hosting tools. Do not substitute current main for an older or stacked PR base. Full Git objects for both revisions must be available. Optional `--title` and `--description` provide the same pre-outcome intent to both Jev approaches. Omit historical PR text that was edited after outcomes or cannot be verified.
+For normal agent use, follow [context gathering](context.md) to freeze product integration source and, where needed, upstream dependency changes. Add `--context <bundle.json>` to both preparation and scoring below. The engine validates the bundle against the exact change before inference. All tests remain eligible.
+
+Commands without `--context` retain the diff/test-source baseline. They do not discover product callers or fetch dependency source automatically. Use that baseline for controlled comparisons; do not present it as an enriched assessment. Context bundles work with `adaptive`, `source`, and `whole` modes, not `file-pairs`. The older `select` receipt workflow does not consume bundles.
+
+## Prepare, then score
+
+Resolve the cumulative diff base and exact tested head through existing Git/hosting tools. Both revisions must be present locally. For a closed or merged PR, use its original base/tested head rather than current main; no checkout switch is necessary. Optional `--title` and `--description` must contain pre-outcome intent. Omit historical text whose earlier version cannot be verified.
 
 ```bash
 faultline benchmark --base <actual-base> --head <tested-head> --prepare --max-requests 100
-```
-
-Preparation builds fresh graphs for missing revisions and estimates uncached work for both Jev approaches. Inspect `preparation.status`, `preparation.blockers`, `preparation.eligible_targets`, and `graph_builds`. Exit 2 means the planned comparison is incomplete: graph failures, oversized evidence, incomplete inventory, or insufficient requests are visible before inference. A zero-request estimate with zero eligible targets is blocked, not a free completed benchmark. It invokes neither Jev nor a test runner. The estimate lists oversized or unreadable targets separately; they are not silently removed. The example request ceiling is shared across both approaches and is not a promise that 100 requests can finish the case.
-
-When live inference is authorized within the configured or user-specified budget:
-
-```bash
 faultline benchmark --base <actual-base> --head <tested-head> --id PR-123 \
   --max-requests 100 --selection-seconds 120
 ```
 
-Requests, including HTTP retries, share one ceiling. The inference deadline is also shared. Test cohorts use the same membership in both approaches when their whole inputs fit. The first approach alternates by cohort; a partial run never qualifies as a complete comparison. A fatal transport failure or interruption stops further network work. Identical subsequent invocations reuse exact-input cached answers; do not loop to reset a user's total authorized budget.
+Preparation reads Git sources and estimates uncached requests without Jev or test runners. Inspect `preparation.status`, blockers, eligible targets, and planned requests. A zero-request plan with zero eligible targets is blocked, not a completed free assessment. The example cap may not fit your suite; all attempts, including retries, share it. Do not loop to reset a user’s authorized task budget.
 
-The reference sends whole supplied diffs, test files, and source matched by each suite's `description_inputs`. Graph-enriched assessments also receive all paths returned by the bounded graph query. Test source and setup are not summarized or split into arbitrary fragments. An oversized target stays unassessed. Jev handles bounded relevance judgments; it does not generate descriptions or establish measured coverage.
+Live scoring writes immutable JSON evidence, Markdown, and a per-target CSV in `.faultline/benchmarks/`. `--output <fresh-path.json>` changes the destination. Partial assessments save their report and exit 2; unrecoverable command errors exit 1. No tests execute or CI settings change. A later identical invocation can reuse exact-input answers from `.faultline/jev-cache.sqlite` within remaining authorization.
 
-Reports distinguish configured source targets from native test cases. A file may contain datasets or scenarios. Native runners are unnecessary for analysis. Both Jev approaches assess all readable targets, including mandatory tests and sources without graph paths. Shared mandatory rules and prerequisites affect selections; positive structural hints alone do not force either semantic policy to select a target.
+Every readable configured test is eligible, including required tests. Files retain their datasets, scenarios, and examples. Configuration scope and mandatory rules are recorded independently of model judgments. Missing source or failed assessment stays RUN.
 
-The command writes one immutable JSON case and one Markdown report in `.faultline/benchmarks/`. `--output <fresh-path.json>` selects another location without creating a second canonical copy. Exit 2 means an incomplete comparison was saved. Exit 1 indicates an error that prevented normal completion. Reports include exact versions, input evidence, request identities, probabilities, and limitations. The reference is an experimental comparator, not ground truth.
+## Input scope and recovery
 
-## When whole inputs do not fit
+Default `--evidence-mode adaptive` shares change context across question-local test source. Whole inputs are preferred. When a diff/test pair exceeds local guards, the engine partitions it at complete lines and change-section boundaries. All source/change ranges are represented; it does not drop tests to make requests fit. Cross-window interactions and unsupplied external setup implementations remain outside the assessment. With a context bundle, the same planner covers the original diff plus labeled supporting evidence, preserving block provenance; larger context can increase requests and conservative selections.
 
-The default `--evidence-mode whole` preserves the whole-input comparator. Smaller batches cannot make a single oversized change/test/setup combination fit. Raising the request count cannot repair that failure either.
+A confirmed provider `max_tokens_exceeded` rejection splits batches of question-local tests into smaller groups. Shared change evidence and each complete test question are preserved; actual child requests receive their own cache identities. Attempts share the same limits. An oversized single question remains unresolved and needs smaller evidence windows. Rejected requests without token usage keep their cost unknown.
 
-Use `--evidence-mode file-pairs` for a separately labeled experiment:
+Each answer must be a valid five-level distribution. One invalid-response retry is enabled by default and counts against the same limits. Accepted sibling answers are preserved. Unknown network outcomes, mismatched models, and cache failures do not trigger paid validation retries. Invalid probabilities are never silently normalized.
 
-```bash
-faultline benchmark --base <actual-base> --head <tested-head> \
-  --evidence-mode file-pairs --prepare --max-requests 100
-
-faultline benchmark --base <actual-base> --head <tested-head> \
-  --evidence-mode file-pairs --max-requests 100 --selection-seconds 120
-```
-
-This mode groups complete `diff --git` sections into bounded change windows. Every eligible test is compared with every window. Each Jev question carries its own whole test source and, for the hybrid approach, the bounded file/symbol relationship context. Questions share the change state. Setup source identities are retained; their implementation bodies are not sent. Whole-input and file-pairs judgments have separate contracts and cache identities.
-
-A target that cannot fit with even one complete changed-file section remains unassessed; no file or diff section is split at an arbitrary byte offset. A target is fully assessed only when all its planned windows return valid answers. Partial targets remain would-run. The diagnostic score is the strongest observed window judgment. Proposed omission requires every window's irrelevant probability to meet the policy threshold. This is not a calibrated cumulative-change probability: interactions across windows and unprovided setup implementations can be missed. Treat this as a distinct experiment, not a complete substitute for whole-input evidence.
-
-A large suite may still need more than 100 requests. Preparation exposes that cost; it never raises the ceiling or authorizes repeated runs. Oversized test files remain blocked regardless of the request allowance. Keep the comparison partial until its declared evidence requirements are actually satisfied.
-
-Graph snapshot preparation checks Git object sizes before exporting files. If it exceeds the configured local graph budget, the error names required and allowed bytes/files. Review `graph.max_source_bytes` and `graph.max_files` against the available local resources, or supply compatible exact-revision artifacts. Graph resource limits and Jev request limits are separate. Do not drop suites or source paths merely to clear a warning.
-
-## CodeGraph without Jev
+For an incomplete saved source/adaptive case:
 
 ```bash
-faultline select --base <actual-base> --head <tested-head> --graph-only
+faultline benchmark-recover --benchmark .faultline/benchmarks/<case>.json \
+  --prepare --max-requests 100 --selection-seconds 120
+faultline benchmark-recover --benchmark .faultline/benchmarks/<case>.json \
+  --max-requests 100 --selection-seconds 120
 ```
 
-This saves a CodeGraph-only shadow proposal with zero Jev calls. Positive graph matches, mandatory rules, and graph gaps are shown separately. Missing structural evidence keeps affected targets would-run; a target with no graph match is labeled not suggested by the baseline. This report is not an execution plan. The ordinary `select` workflow retains its existing policy; use `benchmark` for the three-way reference comparison.
+Recovery saves a new case with parent provenance and accepted judgments intact. It preserves the original batch membership so accepted answers remain reusable. Collected context is recovered from the frozen benchmark; no new collection or upstream checkout is needed. Declared context gaps continue to require full suites. The main report includes cumulative original and recovery usage; current-invocation usage is separate. A target is fully assessed only after every part has a valid answer. Windowed relevance is the maximum plausible-or-stronger part statistic. Conservative omission requires every part to meet the irrelevant cutoff. Neither is a calibrated probability for the whole change.
 
-## Shared main-branch baseline
+A single indivisible line or required context that cannot fit stays blocked. Smaller batches or more requests cannot fix an oversized individual question. `--max-state-bytes` and `--max-batch-bytes` override local byte guards for one invocation; these are not exact provider token counts. Inspect the provider’s current model limits before changing them; never disable response validation.
 
-A trusted CI job can run this after a merge or push to main, with Python, Faultline, CodeGraph 1.6.0, and the committed suite configuration installed:
+Other evidence modes are explicit experiments:
+
+- `source`: full cumulative diff plus whole test file; oversized inputs stay unresolved.
+- `whole`: additionally supplies complete configured setup source; can need larger requests.
+- `file-pairs`: whole test files against bounded groups of complete changed-file sections; cross-section interactions are not assessed. It cannot supply cumulative-change probabilities for the offline threshold comparison.
+
+## Read decisions and costs
+
+`benchmark-report` regenerates saved evidence offline:
 
 ```bash
-faultline graph build --revision HEAD --fresh --output .faultline/main-graph
+faultline benchmark-report --benchmark .faultline/benchmarks/<case>.json \
+  --output .faultline/reports/pr-review.md
 ```
 
-`--fresh` disables incremental seeding. Reusing an already built fresh artifact for the same exact revision is allowed. An existing output for another revision or an incremental graph is rejected. Faultline publishes a closed SQLite snapshot and manifest; those two files are the baseline artifact.
+The report compares the full configured suite with Jev’s RUN/OMIT proposal. Reasons distinguish required tests, policy choices, and unresolved fallbacks. The model’s most likely label is separate: an irrelevant label can still produce RUN below the configured omission cutoff.
 
-A copyable [GitHub Actions example](../assets/github-main-graph.yml) builds and publishes the baseline. Configure its pinned Faultline ref and repository access before adopting it. The example is not installed into the consuming repository automatically. Other CI platforms can run the same command and publish the same files.
+The default omits non-required tests at `P(irrelevant) ≥ 0.95`. This retains weak-or-higher relevance **above 5%** when no other rule applies. It is not the same statistic as plausible-or-stronger relevance, which excludes weak.
 
-Restore a trusted artifact using your CI platform's artifact tools. If its revision matches the PR's exact base, pass it explicitly:
+Requests, input tokens, cache hits, and pricing are reported separately. Supply a report-only `--pricing <file.json>` override with the pinned model, ISO `as_of` date, and verified `input_usd_per_million` rate; an HTTPS `source` is optional. Missing usage or a missing dated price stays unknown. Estimated input cost excludes output and external agent costs. A cached or partial run does not establish the price of a new complete PR, and mixed-suite batches do not provide per-test cost attribution.
+
+The CSV keeps exact decisions, probabilities, and a `review_notes` column. Regenerating the same case preserves notes; reusing that notes file for another case is rejected. Frozen inputs and judgments are unchanged.
+
+## Compare policies offline
 
 ```bash
-faultline benchmark --base <actual-base> --head <tested-head> \
-  --base-graph .faultline/restored-main --prepare
+faultline benchmark-report --benchmark .faultline/benchmarks/<case>.json \
+  --compare-policies --relevance-thresholds 0.10 0.25 0.50 \
+  --file-budgets 100 250 500 --output .faultline/reports/pr-review.md
 ```
 
-`--head-graph` similarly accepts an exact tested-head artifact. Faultline checks repository identity, revision, settings, and integrity. An old or newer main artifact cannot stand in for the PR base. Missing graphs are built for the correct revisions; `--no-build` instead reports available evidence and any gaps. Incompatible explicitly supplied artifacts produce visible incomplete graph evidence, not a successful baseline comparison.
+These experiments use the same saved probabilities with zero new inference. Relevance is `P(plausible) + P(strong) + P(direct)`. Required targets, full-suite obligations, and unresolved evidence remain RUN at every threshold or budget. Prerequisites expand transitively. Infeasible budgets and stable-ID tie-breaks are disclosed.
 
-Use artifacts from trusted main jobs; hashes detect modification but do not authenticate producers. Keep PR-specific artifacts separate. A baseline does not require Jev credentials. Retain the specific baseline versions needed by saved benchmark cases; do not commit graph databases to Git.
+Defaults are 10%, 25%, and 50% relevance and 10%, 25%, and 50% of enumerated file count. File budgets are not runtime budgets. Markdown, CSV columns, and a `.policies.json` record exact actions and differences from the saved policy. Freeze comparisons before outcome inspection; no lowest-count winner is automatically selected.
 
-## Import existing full-suite results
+## Prepare a PR comment
+
+```bash
+faultline benchmark-report --benchmark .faultline/benchmarks/<case>.json \
+  --format comment --output .faultline/reports/pr-comment.md
+```
+
+This creates a compact preview with RUN/OMIT counts, incomplete assessments, tokens, and cost assumptions. Add a real HTTPS `--report-url` for a published artifact and `--compare-policies` for the optional threshold table. It excludes source bodies and local filesystem paths. Nothing is posted to the hosting platform. Existing CI stays unchanged.
+
+## Assess outcomes
 
 Freeze the benchmark before reading outcomes. Normalize one CI attempt into the JSON contract below, using exact source-unit IDs from the case and native IDs from the runner's inventory/results. Existing hosting and result tooling performs collection; Faultline does not trigger CI or invent test identities.
 
@@ -115,6 +124,18 @@ faultline benchmark-report --benchmark .faultline/benchmarks/<id>.json \
   --outcomes .faultline/ci-outcomes.json
 ```
 
+To assess previously frozen threshold and budget alternatives alongside the original decisions:
+
+```bash
+faultline benchmark-report --benchmark .faultline/benchmarks/<case>.json \
+  --outcomes .faultline/ci-outcomes.json \
+  --policy-comparison .faultline/reports/pr-review.policies.json
+```
+
+The policy artifact must have been generated from this exact case before outcomes were inspected. Do not tune it after reading failures and then claim an outcome-blind assessment.
+
+Observed failed tests are shown with their RUN/OMIT actions even when their cause is unknown. Unknown failures are not confirmed regressions; unmatched identities remain UNMAPPED. The assessment JSON includes these observations for each frozen experimental policy.
+
 Import is offline and saves one assessment JSON plus Markdown. It checks the benchmark ID, repository, base/head, duplicate results, and declared inventory. Missing/unmatched tests, skipped/unknown results, partial benchmarks, or `outcome_blind: false` prevent comparative recall claims. Never assert outcome blindness if the agent or operator already inspected failures. A green run has no regression denominator.
 
 Natural-policy recall uses shared mandatory execution rules. Equal-sized raw ranking cuts are separate diagnostics and do not represent executable selections with prerequisite scheduling. Duration sums estimate serial test work; they exclude setup, parallelism, indexing, inference, and audit overhead. Coverage and measured CI savings remain unknown without their own measurements. Treat repeated attempts as related observations and keep tuning cases separate from assessment cases.
@@ -125,4 +146,4 @@ Without `--outcomes`, `benchmark-report --benchmark <path>` regenerates the Mark
 
 New answers are stored in one `.faultline/jev-cache.sqlite` database. Cache identity still covers the complete transmitted request, model, and evaluator. Stored answers are validated and immutable; arbitrary similar descriptions never justify reuse. The cache contains hashes and answers, not repeated request source bodies. Older JSON answer caches remain readable. Run `faultline cache compact` to migrate verified answers into SQLite and remove their old JSON cache files. Unrecognized or invalid batches remain untouched and are counted in the result. This command makes no API calls. Do not delete saved benchmark evidence to clear disposable caches.
 
-Copy the SQLite cache only after the process has finished, and restore it only from trusted artifact producers. The benchmark JSON retains common source evidence once, the two policies' judgments, and a request manifest. Graph artifacts keep their own immutable revision identities. Storage changes must not change inference inputs. New retrieval, summarization, batch membership, model, or evaluator choices require a separately versioned experiment against the saved reference cases.
+Copy the SQLite cache only after the process has finished, and restore it only from trusted artifact producers. The benchmark JSON retains common source evidence once, Jev judgments, exact Git revision identities, and a request manifest. Storage changes must not change inference inputs. New retrieval, summarization, batch membership, model, or evaluator choices require a separately versioned experiment against the saved reference cases.

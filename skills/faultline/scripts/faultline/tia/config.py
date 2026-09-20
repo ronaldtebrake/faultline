@@ -11,7 +11,7 @@ from ..core import DEFAULTS, FaultlineError, digest, number, read_json
 
 SCHEMA = 2
 DEFAULT_EVALUATOR = {**DEFAULTS, 'max_batch_units': 50, 'max_batch_bytes': 48000,
-                     'selection_seconds': 60, 'max_test_bytes': 1000000, 'max_evidence_pairs': 10000, 'pricing': None}
+                     'selection_seconds': 60, 'max_test_bytes': 1000000, 'max_evidence_pairs': 10000, 'invalid_response_retries': 1, 'pricing': None}
 
 
 def matches(path, patterns):
@@ -54,8 +54,8 @@ def repository_identity(root):
 def load_config(root):
     raw = read_json(root / 'faultline.json')
     if not isinstance(raw, dict) or raw.get('schema_version') != SCHEMA:
-        raise FaultlineError('Create faultline.json with schema_version: 2; see docs/tia.md')
-    if set(raw) - {'schema_version', 'repository', 'suites', 'evaluator', 'scope', 'state_max_age_seconds', 'graph'}:
+        raise FaultlineError('Create faultline.json with schema_version: 2; see docs/install.md')
+    if set(raw) - {'schema_version', 'repository', 'suites', 'evaluator', 'scope'}:
         raise FaultlineError('Unknown faultline.json configuration field')
     if not isinstance(raw.get('suites'), list) or not raw['suites']:
         raise FaultlineError('Configure at least one suite')
@@ -63,29 +63,16 @@ def load_config(root):
         raise FaultlineError('evaluator must be an object')
     if not isinstance(raw.get('repository', root.name), str) or not raw.get('repository', root.name):
         raise FaultlineError('repository must be nonempty text')
-    from .graph import DEFAULTS as GRAPH_DEFAULTS, VERSION as GRAPH_VERSION
-    graph = {**GRAPH_DEFAULTS, **raw.get('graph', {})} if isinstance(raw.get('graph', {}), dict) else {}
-    if not graph or set(graph) - set(GRAPH_DEFAULTS) or graph['version'] != GRAPH_VERSION:
-        raise FaultlineError('Use the supported pinned CodeGraph version and documented graph settings')
-    if not strings(graph['command'], 'graph.command'):
-        raise FaultlineError('graph.command cannot be empty')
-    for key in set(GRAPH_DEFAULTS) - {'command', 'version', 'extensions'}:
-        if not isinstance(graph[key], int) or isinstance(graph[key], bool) or graph[key] <= 0:
-            raise FaultlineError('Graph budgets must be positive integers')
-    if not isinstance(graph['extensions'], dict) or not all(isinstance(k, str) and k.startswith('.') and isinstance(v, str) and v for k, v in graph['extensions'].items()):
-        raise FaultlineError('graph.extensions must map file extensions to CodeGraph language IDs')
-    config = {'graph': graph, 'schema_version': SCHEMA, 'repository': raw.get('repository') or repository_identity(root),
+    config = {'schema_version': SCHEMA, 'repository': raw.get('repository') or repository_identity(root),
               'scope': strings(raw.get('scope', []), 'scope'), 'suites': [],
-              'state_max_age_seconds': raw.get('state_max_age_seconds', 86400),
               'evaluator': {**DEFAULT_EVALUATOR, **raw.get('evaluator', {})}}
-    number(config['state_max_age_seconds'], 'state_max_age_seconds')
     ev = config['evaluator']
     if set(ev) - set(DEFAULT_EVALUATOR):
         raise FaultlineError('Unknown evaluator configuration field')
     if not isinstance(ev['model'], str) or not re.fullmatch(r'jev-\d+\.\d+\.\d+', ev['model']):
         raise FaultlineError('Use a pinned Jev model version')
     for key in set(DEFAULT_EVALUATOR) - {'model', 'pricing'}:
-        number(ev[key], key, allow_zero=key in ('jev_requests', 'retries', 'max_wait', 'request_interval'))
+        number(ev[key], key, allow_zero=key in ('jev_requests', 'retries', 'invalid_response_retries', 'max_wait', 'request_interval'))
         if key not in ('request_interval', 'selection_seconds') and not isinstance(ev[key], int):
             raise FaultlineError(f'{key} must be an integer')
     if ev['pricing'] is not None:
@@ -96,7 +83,7 @@ def load_config(root):
     seen = set()
     allowed = {'kind', 'id', 'runner', 'command', 'cwd', 'sources', 'scope', 'shared_inputs',
                'description_inputs', 'must_run', 'prerequisites', 'variants', 'mode',
-               'irrelevant_threshold', 'discovery_command', 'selection_command', 'timeout_seconds',
+               'irrelevant_threshold', 'discovery_command', 'timeout_seconds',
                'relationships', 'path_map', 'result_format', 'autoload'}
     for value in raw['suites']:
         if not isinstance(value, dict) or set(value) - allowed:
@@ -121,7 +108,7 @@ def load_config(root):
                 for pattern in suite[key]:
                     if Path(pattern).is_absolute() or '..' in Path(pattern).parts:
                         raise FaultlineError('Source and scope patterns must be repository-relative')
-        for key in ('discovery_command', 'selection_command'):
+        for key in ('discovery_command',):
             if key in suite:
                 if not strings(suite[key], key):
                     raise FaultlineError(key + ' cannot be empty')

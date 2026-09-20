@@ -1,13 +1,11 @@
-"""Freeze an outcome-blind shadow proposal from source targets, CodeGraph, and Jev."""
+"""Freeze an outcome-blind shadow proposal from Git source targets and Jev."""
 from __future__ import annotations
 
 import subprocess
 import re
 import time
-from pathlib import Path
 
 from ..core import FaultlineError, digest, now, number
-from . import graph, graph_baseline
 from .batch import BATCH_VERSION, BatchedJev
 from .common import checked, hashes, revision, save_frozen, seal
 from .config import load_config, matches, variants
@@ -15,7 +13,9 @@ from .mapping import covered_units
 from .. import __version__
 from .evidence import test_profile
 
-POLICY = 'codegraph-complete-targets-v6'
+POLICY = 'jev-source-targets-v1'
+REQUIRED = {'whole_check_requires_full_execution', 'changed_or_new_test', 'must_run_rule',
+            'description_setup_changed', 'positive_coverage_or_dependency_match'}
 
 
 def git_output(root, *args):
@@ -45,7 +45,7 @@ def inventory_identity(inventory):
     return digest({key: inventory[key] for key in ('head', 'config_hash', 'suites', 'execution_inputs', 'complete')})
 
 
-def decisions(root, config, inventory, context, snapshot, graph_evidence, source, *, include_profiles=True):
+def decisions(root, config, inventory, context, snapshot, source, *, include_profiles=True):
     changed = context['changed_files']
     suite_configs = {key: (suite, variant) for suite, variant, key in variants(config)}
     bounded = [*config['scope'], 'faultline.json']
@@ -56,7 +56,7 @@ def decisions(root, config, inventory, context, snapshot, graph_evidence, source
         suite, variant = suite_configs[native['key']]
         reasons = {u['id']: [] for u in native['units']}
         fallbacks = []
-        warnings = list(graph_evidence['fallbacks'])
+        warnings = []
         if not native['complete']:
             fallbacks.append('no_configured_source_targets')
         if snapshot['head'] != context['head'] or not snapshot['clean']:
@@ -74,10 +74,6 @@ def decisions(root, config, inventory, context, snapshot, graph_evidence, source
             if u.get('kind') == 'check':
                 reasons[id].append('whole_check_requires_full_execution')
                 continue
-            if graph_evidence['paths'].get(u['source']):
-                reasons[id].append('positive_code_graph_match')
-            if u['source'] in graph_evidence['unmapped_tests']:
-                warnings.append('test_sources_without_graph_paths_scored_from_source')
             if u['source'] in changed:
                 reasons[id].append('changed_or_new_test')
             if matches(id, suite['must_run']) or matches(u['source'], suite['must_run']):
@@ -101,12 +97,12 @@ def decisions(root, config, inventory, context, snapshot, graph_evidence, source
                     reasons[id].append('positive_coverage_or_dependency_match')
             except (FaultlineError, KeyError, TypeError) as exc:
                 fallbacks.append('unusable_relationship_evidence')
-        # Graph gaps and execution rules never gate semantic scoring.
+        # Execution rules never gate semantic scoring.
         for u in native['units'] if include_profiles else []:
             if u.get('kind') == 'check':
                 continue
             try:
-                profiles.append(test_profile(source, u, graph_evidence, suite, variant))
+                profiles.append(test_profile(source, u, suite, variant))
             except FaultlineError as exc:
                 reasons[u['id']].append('source_evidence_unavailable')
                 evidence[u['id']] = str(exc)
@@ -119,7 +115,7 @@ def decisions(root, config, inventory, context, snapshot, graph_evidence, source
 
 
 def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=False, evaluator=None,
-           base_graph=None, head_graph=None, build_graphs=True, native=False, baseline=None, max_requests=None, selection_seconds=None, prepare=False, graph_only=False):
+           native=False, max_requests=None, selection_seconds=None, prepare=False):
     started = time.monotonic()
     store.initialize()
     config = load_config(store.root)
@@ -129,61 +125,30 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
     if selection_seconds is not None:
         number(selection_seconds, 'selection_seconds')
         config['evaluator']['selection_seconds'] = selection_seconds
-    if graph_only and (prepare or evaluator is not None or max_requests is not None or selection_seconds is not None):
-        raise FaultlineError('--graph-only does not use a Jev evaluator, preparation, or inference budgets')
-    if prepare and dry_run:
-        raise FaultlineError('Choose --prepare to build graphs or --dry-run to inspect cached graphs')
     context = change(store.root, base, head, identifier)
     if native and (revision(store.root) != context['head'] or not workspace(store.root)['clean']):
         raise FaultlineError('Optional native enrichment requires a clean tested checkout; omit --native for source-only analysis')
     snapshot = workspace(store.root)
-    graph_started = time.monotonic()
-    graph_builds = []
-    if build_graphs and not dry_run:
-        for side, provided in [('base', base_graph), ('head', head_graph)]:
-            if provided:
-                continue
-            try:
-                reuse = (base_graph or graph.artifact_path(store, config, context['base'])) if side == 'head' else baseline
-                if reuse and not Path(reuse).exists():
-                    reuse = None
-                built = graph.build(store, config, context[side], reuse=reuse)
-                graph_builds.append({'snapshot': side, 'cache_hit': built['cache_hit'], 'path': built['path'], 'reused_from': built.get('reused_from')})
-            except (FaultlineError, OSError) as exc:
-                graph_builds.append({'snapshot': side, 'error': str(exc)})
-    from .graph_index import open_index, enrich
-    source, raw_inventory, index_provenance = open_index(store, config, context['head'], head_graph)
-    inventory = enrich(store.root, config, raw_inventory) if native else raw_inventory
-    graph_evidence = graph.evidence(store, config, context, inventory, base_graph, head_graph)
-    if index_provenance['basis'] != 'graph':
-        graph_evidence['fallbacks'].append('graph_source_index_unavailable_using_git_fallback')
-    graph_seconds = time.monotonic() - graph_started
-    suites, profiles, evidence, unknown = decisions(store.root, config, inventory, context, snapshot, graph_evidence, source,
-                                                     include_profiles=not graph_only)
-    baseline_result = graph_baseline.build(suites, graph_evidence, unknown)
+    source_started = time.monotonic()
+    from .source_index import open_index
+    source, raw_inventory, index_provenance = open_index(store, config, context['head'])
+    inventory = open_index(store, config, context['head'], native=True)[1] if native else raw_inventory
+    source_seconds = time.monotonic() - source_started
+    suites, profiles, evidence, unknown = decisions(store.root, config, inventory, context, snapshot, source)
+    for suite in suites:
+        if unknown:
+            suite['fallbacks'].append('change_outside_declared_scope')
     inference_started = time.monotonic()
-    if graph_only:
-        result = {'rows': {}, 'errors': {}, 'batches': 0, 'requests': 0, 'cache_hits': 0,
-                  'uncached_requests': 0, 'remaining_requests': 0, 'usage': [], 'complete': True}
-    else:
-        evaluator = evaluator or BatchedJev(store, config['evaluator'], deadline=time.monotonic() + config['evaluator']['selection_seconds'])
-        evaluate = evaluator.evaluate_source if isinstance(evaluator, BatchedJev) else evaluator.evaluate
-        result = evaluate(context, profiles, dry_run=dry_run or prepare)
+    evaluator = evaluator or BatchedJev(store, config['evaluator'], deadline=time.monotonic() + config['evaluator']['selection_seconds'])
+    evaluate = evaluator.evaluate_source if isinstance(evaluator, BatchedJev) else evaluator.evaluate
+    result = evaluate(context, profiles, dry_run=dry_run or prepare)
     inference_seconds = time.monotonic() - inference_started
     if dry_run or prepare:
-        return {'dry_run': True, 'graphs_prepared': prepare, 'change': {k: context[k] for k in ('id', 'base', 'head', 'changed_files')},
-                'candidate_units': baseline_result['counts']['known_targets'], 'graph_baseline': baseline_result,
-                'analysis_mode': 'codegraph_only' if graph_only else 'codegraph_jev', 'estimate': result, 'index': index_provenance, 'unknown_paths': unknown, 'graph': graph_evidence,
+        return {'dry_run': True, 'change': {k: context[k] for k in ('id', 'base', 'head', 'changed_files')},
+                'candidate_units': sum(len(s['units']) for s in suites),
+                'analysis_mode': 'jev', 'estimate': result, 'index': index_provenance, 'unknown_paths': unknown,
                 'fallbacks': {s['key']: s['fallbacks'] for s in suites}, 'execution': 'none', 'mode': 'shadow'}
     for suite in suites:
-        if graph_only:
-            baseline_suite = next(s for s in baseline_result['suites'] if s['key'] == suite['key'])
-            suite['proposed_selected'] = baseline_suite['would_run']
-            suite['proposed_omitted'] = baseline_suite['not_suggested']
-            suite['reasons'] = {t['id']: t['reasons'][:] for t in baseline_suite['targets']}
-            suite['fallbacks'] = baseline_suite['fallbacks']
-            suite['execution_reasons'] = ['shadow_report_only', 'graph_only_baseline_not_an_execution_plan']
-            continue
         ids = set(suite['reasons'])
         if ids.intersection(result['errors']):
             suite['warnings'].append('semantic_evaluation_incomplete')
@@ -225,9 +190,6 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
     # the same unit-count budget; lexical/path scores are deterministic baselines.
     source_texts = {p['id']: p['source_text'] for p in profiles}
     for suite in suites:
-        if graph_only:
-            suite['baselines'] = {}
-            continue
         count = len(suite['proposed_selected'])
         units = suite['units']
         tokens = set(re.findall(r"[a-z][a-z0-9_]+", context['diff'].lower()))
@@ -238,7 +200,6 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
             'random': [u['id'] for u in sorted(units, key=lambda u: digest([context['base'], context['head'], config['evaluator']['random_seed'], u['id']]))[:count]],
             'path': [u['id'] for u in sorted(units, key=lambda u: (-max((len(set(u['source'].split('/')[:-1]) & set(p.split('/')[:-1])) for p in context['changed_files']), default=0), u['id']))[:count]],
             'lexical': [u['id'] for u in sorted(units, key=lambda u: (-lexical(u), u['id']))[:count]],
-            'graph': [u['id'] for u in sorted(units, key=lambda u: (-bool(graph_evidence['paths'].get(u['source'])), u['id']))[:count]],
             'jev': [u['id'] for u in sorted(units, key=lambda u: (-result['rows'].get(u['id'], {}).get('score', 4), u['id']))[:count]]}
     # Detect source changes during discovery/inference before freezing any decision.
     if workspace(store.root) != snapshot:
@@ -256,24 +217,21 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
                 'unscored': len(target_ids - scored), 'partial': len(scored - complete_ids),
                 'status': 'complete' if target_ids and target_ids == complete_ids else ('partial' if scored else 'not_evaluated'),
                 'errors': {**{id: evidence[id] for id in target_ids if id in evidence}, **result['errors']}}
-    if graph_only:
-        semantic['status'] = 'disabled'
     semantic_complete = bool(target_ids) and target_ids == complete_ids
-    document = seal({'schema_version': 2, 'kind': 'selection', 'mode': 'shadow', 'execution': 'none', 'created_at': now(), 'engine_version': __version__, 'policy': graph_baseline.POLICY if graph_only else POLICY,
-                     'analysis_mode': 'codegraph_only' if graph_only else 'codegraph_jev', 'graph_baseline': baseline_result,
+    document = seal({'schema_version': 2, 'kind': 'selection', 'mode': 'shadow', 'execution': 'none', 'created_at': now(), 'engine_version': __version__, 'policy': POLICY,
+                     'analysis_mode': 'jev',
                      'repository': config['repository'], 'change': context, 'workspace': snapshot,
                      'source_provenance': {'revision': context['head'], 'configuration': 'local faultline.json', 'configuration_hash': config['config_hash']},
                      'config_hash': config['config_hash'], 'inventory': inventory,
-                     'graph': graph_evidence, 'graph_builds': graph_builds,
                      'inventory_hash': inventory_identity(raw_inventory), 'index': index_provenance, 'relationship_evidence': evidence,
-                     'evaluator': {'enabled': False} if graph_only else {'model': config['evaluator']['model'], 'batch_version': BATCH_VERSION},
+                     'evaluator': {'model': config['evaluator']['model'], 'batch_version': BATCH_VERSION},
                      'suites': suites, 'judgments': result['rows'], 'semantic_errors': result['errors'],
                      'usage': {k: result[k] for k in ('batches', 'requests', 'cache_hits', 'uncached_requests', 'usage', 'unique_evidence_targets', 'evidence_pairs', 'diff_fragments', 'remaining_requests', 'request_ceiling', 'target_completion_ceiling', 'blocked_targets', 'uncached_payload_bytes', 'pacing_floor_seconds', 'selection_seconds_limit') if k in result},
-                     'selection_seconds': time.monotonic() - started, 'graph_seconds': graph_seconds,
+                     'selection_seconds': time.monotonic() - started, 'source_seconds': source_seconds,
                      'inference_seconds': inference_seconds, 'cost': cost, 'unknown_paths': unknown,
                      'complete': True, 'semantic_complete': semantic_complete, 'semantic': semantic,
                      'limitations': ['Shadow mode is report-only; no tests are executed.',
-                                     'Static graph paths and Jev relevance are not measured code coverage.',
+                                     'Jev relevance is not measured code coverage or a predicted failure probability.',
                                      'Source targets are provisional; executable identities are validated only during execution.',
                                      'CI must authenticate artifact producers; integrity hashes alone do not establish trust. Experimental execution is not enabled.']})
     output = output or store.path / 'selections' / document['integrity'] / 'selection.json'
@@ -283,7 +241,7 @@ def select(store, base, head='HEAD', *, identifier=None, output=None, dry_run=Fa
     from .proposals import report_selection
     proposal_report = report_selection(store, document)
     return {'report': proposal_report, 'path': str(output), 'selection_id': document['integrity'], 'complete': True,
-            'analysis_mode': document['analysis_mode'], 'graph_baseline': baseline_result['counts'],
+            'analysis_mode': document['analysis_mode'],
             'semantic_complete': document['semantic_complete'], 'semantic': semantic, 'index': index_provenance, 'usage': document['usage'],
             'proposed_selected': sum(len(s['proposed_selected']) for s in suites),
             'proposed_omitted': sum(len(s['proposed_omitted']) for s in suites),

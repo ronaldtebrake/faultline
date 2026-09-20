@@ -10,8 +10,6 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-VERSION = "0.1.0"
-SCHEMA = 1
 DEFAULTS = {"model": "jev-1.13.0", "jev_requests": 100, "request_interval": 1.0,
             "retries": 2, "max_wait": 60, "max_state_bytes": 24_000, "random_seed": 1729}
 
@@ -76,21 +74,6 @@ def number(value, label, allow_zero=False):
     return value
 
 
-def required_string(obj, key):
-    if not isinstance(obj, dict) or not isinstance(obj.get(key), str) or not obj[key].strip():
-        raise FaultlineError(f"Expected a nonempty string: {key}")
-    return obj[key]
-
-
-def relative_source(root, source):
-    path = Path(source)
-    if path.is_absolute() or ".." in path.parts or not (root / path).resolve().is_relative_to(root):
-        raise FaultlineError(f"Source must be inside the repository: {source}")
-    if not (root / path).is_file():
-        raise FaultlineError(f"Source file missing: {source}")
-    return root / path
-
-
 class Store:
     def __init__(self, root: Path):
         self.root = root.resolve()
@@ -99,18 +82,3 @@ class Store:
     def initialize(self):
         self.path.mkdir(parents=True, exist_ok=True)
         write_text(self.path / ".gitignore", "*\n")
-
-    def config(self) -> dict:
-        config = dict(DEFAULTS)
-        custom = read_json(self.path / "config.json", {})
-        if not isinstance(custom, dict) or set(custom) - set(DEFAULTS):
-            raise FaultlineError("config.json must contain only documented configuration keys")
-        config.update(custom)
-        for key in set(DEFAULTS) - {"model"}:
-            number(config[key], key, allow_zero=key != "max_state_bytes")
-            if key != "request_interval" and not isinstance(config[key], int):
-                raise FaultlineError(f"{key} must be an integer")
-        required_string(config, "model")
-        if config["model"] in ("jev-latest", "jev-preview"):
-            raise FaultlineError("Pin a versioned Jev model for reproducible caches.")
-        return config

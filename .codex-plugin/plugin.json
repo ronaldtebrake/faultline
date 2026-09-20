@@ -1,7 +1,7 @@
 {
   "name": "faultline",
-  "version": "0.6.0",
-  "description": "Agent-native semantic test ranking with Jev.",
+  "version": "0.11.3",
+  "description": "Jev-based test impact assessment for CI and coding agents.",
   "author": {
     "name": "ronaldtebrake",
     "url": "https://github.com/ronaldtebrake"
@@ -10,7 +10,7 @@
   "interface": {
     "displayName": "Faultline",
     "shortDescription": "Understand tests and rank their relevance to a change with Jev.",
-    "longDescription": "Build inspectable test catalogs, rank changes with Jev, and compare frozen predictions with historical regression evidence.",
+    "longDescription": "Score actual test source against a cumulative change with Jev, explain proposed selections and costs, and compare frozen evidence with CI outcomes.",
     "developerName": "ronaldtebrake",
     "category": "Productivity",
     "capabilities": [
@@ -18,8 +18,8 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Use Faultline to index this repository\u2019s tests.",
-      "Use Faultline to analyze one PR and save a report."
+      "Use Faultline to configure and inspect this repository’s test source.",
+      "Use Faultline to benchmark one PR and save its Jev routing report."
     ]
   },
   "homepage": "https://github.com/ronaldtebrake/faultline",

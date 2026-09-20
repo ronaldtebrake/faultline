@@ -8,7 +8,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from ..core import FaultlineError, digest
+from ..core import FaultlineError
 from .common import glob_files, hashes
 from .config import inside
 
@@ -65,7 +65,6 @@ def unit(root, suite, variant, source, members, locator, title):
     fingerprint = hashes(root, [source, *glob_files(root, suite['description_inputs'])])
     return {'id': suite['id'] + ':' + variant['id'] + ':' + source,
             'source': source, 'members': sorted(members), 'locator': locator, 'title': title,
-            'description_hash': digest({'sources': fingerprint}),
             'source_hashes': fingerprint}
 
 

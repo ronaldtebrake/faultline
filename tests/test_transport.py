@@ -8,10 +8,11 @@ import urllib.error
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from faultline.core import DEFAULTS, FaultlineError, read_json
-from faultline.network import Budget, HTTP, NoRedirect
-from faultline.jev import JevEvaluator, LEVELS
-from helpers import setup_case
+from faultline.core import DEFAULTS, FaultlineError, Store, read_json
+from faultline.network import Budget, HTTP, NoRedirect, InputTooLarge
+from faultline.jev import LEVELS
+from faultline.tia.batch import BatchedJev
+from faultline.tia.config import DEFAULT_EVALUATOR
 
 
 class Response:
@@ -64,6 +65,16 @@ class TransportTests(unittest.TestCase):
             self.assertEqual(1, transport.budget.used)
             self.assertNotIn('test-secret', str(caught.exception))
 
+    def test_token_limit_error_is_classified_without_exposing_provider_body(self):
+        for detail, expected in (({'error_type': 'max_tokens_exceeded', 'message': 'test-secret'}, InputTooLarge),
+                                 ({'error_type': 'other', 'message': 'test-secret'}, FaultlineError)):
+            transport = self.transport()
+            transport.opener.open.side_effect = urllib.error.HTTPError('url', 400, 'bad request', {}, io.BytesIO(json.dumps({'detail': detail}).encode()))
+            with self.assertRaises(expected) as caught:
+                transport.request('https://api.typesafe.ai/v1/systemone', payload={})
+            self.assertNotIn('test-secret', str(caught.exception))
+            self.assertEqual(1, transport.budget.used)
+
     def test_budget_and_foreign_origin_rejected(self):
         transport = self.transport()
         transport.budget.limit = 0
@@ -75,23 +86,25 @@ class TransportTests(unittest.TestCase):
         self.assertIsNone(NoRedirect().redirect_request(None, None, 302, '', {}, 'https://other.example'))
 
     def test_jev_request_contract_and_model_mismatch(self):
-        root, store, path = setup_case(self)
-        evaluator = JevEvaluator(store, DEFAULTS, Budget(10))
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        evaluator = BatchedJev(Store(Path(temp.name)), DEFAULT_EVALUATOR)
         evaluator.http = Mock()
-        response = {'model': DEFAULTS['model'], 'answers': {'relevance': {
+        response = {'model': DEFAULTS['model'], 'answers': {'q0': {
             'type': 'choice', 'choice': 'direct', 'confidence': 1,
             'probabilities': {level: float(level == 'direct') for level in LEVELS}}}}
         evaluator.http.request.return_value = (response, {})
-        from faultline.index import load_profiles
-        profile = load_profiles(store.path / 'index.jsonl')[0]
-        result = evaluator.evaluate(read_json(path), profile)
-        self.assertEqual(4, result['score'])
+        profile = {'id': 'test', 'source': 'tests/a.py', 'description': ''}
+        result = evaluator.evaluate({'diff': 'change', 'provenance': {'outcomes': 'private'}}, [profile])
+        self.assertEqual(4, result['rows']['test']['score'])
         payload = evaluator.http.request.call_args.kwargs['payload']
-        self.assertEqual(set(LEVELS), set(payload['questions']['relevance']['criteria']))
+        self.assertEqual(set(LEVELS), set(payload['questions']['q0']['criteria']))
         self.assertNotIn('provenance', payload['state']['change'])
         response['model'] = 'another-version'
-        with self.assertRaises(FaultlineError):
-            evaluator.evaluate(read_json(path), profile)
+        result = evaluator.evaluate({'diff': 'different inputs'}, [profile])
+        self.assertFalse(result['complete'])
+        self.assertIn('test', result['errors'])
+
 
 
 class TLSTests(unittest.TestCase):

@@ -1,94 +1,82 @@
-# Install Faultline
+# Install and set up Faultline
 
-## 1. Check the prerequisites
+You need Git and Python 3.10+. Analysis does not require application dependencies or test runners.
 
-You need Python 3.10+, Git, Node.js/npm, and a coding agent that supports Agent Skills. Test runners and application dependencies are needed when you execute tests; they are not required for source analysis.
+## 1. Install the skill or CLI
 
-Faultline is currently private, so your GitHub account needs access to the repository through SSH.
-
-## 2. Install CodeGraph
+For a coding agent, run this in the repository you want to analyze. The installer also needs Node.js/npm:
 
 ```bash
-npm install -g @colbymchenry/codegraph@1.6.0
-codegraph --version
+npx skills add https://github.com/ronaldtebrake/faultline --skill faultline
 ```
 
-The version should be `1.6.0`. Faultline uses this CLI directly; no CodeGraph agent or MCP setup is needed.
+Choose your agent, then start a new session. If the repository is private, Git must be authenticated with an account that has access.
 
-## 3. Install the Faultline skill
-
-Run this from the repository you want to analyze:
+For terminal or CI use, install the standalone CLI:
 
 ```bash
-npx skills add git@github.com:ronaldtebrake/faultline.git --skill faultline
+python3 -m venv ~/.venvs/faultline
+~/.venvs/faultline/bin/pip install 'git+https://github.com/ronaldtebrake/faultline.git'
+export PATH="$HOME/.venvs/faultline/bin:$PATH"
+faultline --version
 ```
 
-Choose your coding agent when prompted, then start a new agent session in that repository.
+Both contain the same engine. If you installed only the skill, your agent invokes `python3 "<installed-skill>/scripts/run.py"` instead of `faultline` in the commands below.
 
-To test unpublished changes, replace the Git URL with your local Faultline checkout:
-
-```bash
-npx skills add /path/to/faultline --skill faultline
-```
-
-Use one of these commands. The skill includes its Python scripts; no separate Python package installation is required.
-
-## 4. Initialize your project
+## 2. Configure the project
 
 Ask your agent:
 
-> Set up Faultline for this repository. Configure its test source patterns and build a reusable CodeGraph baseline from the default branch. Reuse a trusted baseline if one is available. Do not generate a separate test catalog, call Jev, run tests, or start the application.
+> Set up Faultline with this repository’s actual test paths, change scope, variants, and must-run rules. Validate the inventory without calling Jev, starting the application, or running tests.
 
-Commit `faultline.json` to share test source patterns and policies. After configuring it, `faultline init --baseline <default-branch>` creates the primary source/test index in `.faultline/graphs/<hash>/graph.sqlite`. It includes CodeGraph relationships and file targets for tests CodeGraph cannot parse, such as Gherkin. There is no separate catalog to maintain.
+Or create `faultline.json` yourself. Adapt this example to suites that actually exist:
 
-Each revision has an immutable snapshot. Ordinary indexing can reuse a compatible ancestor. The reference benchmark builds fresh graphs for missing revisions and accepts trusted artifacts for its exact base and tested head. Teammates can import a trusted baseline with `faultline graph import <artifact-directory>`; the [workflow guide](../skills/faultline/references/graph-workflow.md#shared-baselines-and-branches) describes export/import. Local credentials, graph artifacts, caches, and reports stay in ignored `.faultline/`.
+```json
+{
+  "schema_version": 2,
+  "scope": ["src/**", "config/**"],
+  "suites": [
+    {"id": "unit", "sources": ["tests/**/*.test.ts"]},
+    {"id": "acceptance", "sources": ["features/**/*.feature"]}
+  ]
+}
+```
 
-If you run `init` before creating `faultline.json`, it prepares storage and asks you to configure suites; run it again after configuration to build the graph.
+```bash
+faultline init
+faultline discover --revision HEAD
+```
 
-## 5. Configure the Jev API key
+Check the listed files, then commit `faultline.json` to share the setup. Empty suites remain incomplete. See the [configuration reference](../skills/faultline/references/workflow.md) for shared inputs, required tests, and variants.
 
-After initialization, create `.faultline/.env` in the repository you want to analyze:
+## 3. Add your Jev key
+
+Create `.faultline/.env` in the project:
 
 ```dotenv
 TYPESAFE_API_KEY="your-key"
 ```
 
-Faultline reads this file automatically, including when invoked from an IDE. Keep it out of Git and do not paste the key into your agent conversation. An existing `TYPESAFE_API_KEY` environment variable takes precedence.
+`init` keeps `.faultline/` ignored. Faultline reads the key in terminals and IDEs. The process environment takes precedence; root `.env` is the final fallback. Keep keys out of Git and chat. Live scoring sends selected change context and test source to Jev.
 
-The key is needed for live Jev judgments. Selected change context, test source, and graph evidence are sent to Jev.
+## 4. Benchmark a PR
 
-## 6. Try a PR or MR
+Ask your agent to gather context and benchmark the PR within your request budget. It can analyze an open or closed PR without switching your branch.
 
-Ask your agent, replacing `123` with your PR or MR number:
+For CLI use, follow [the commands guide](commands.md). You need the cumulative diff base and exact tested head locally. Prepare first, inspect the work estimate, then score. The CLI accepts an agent-prepared context bundle; without one, it scores the diff and test source alone.
 
-> Use Faultline to benchmark PR 123 with CodeGraph, Jev, and CodeGraph plus Jev. Prepare the graphs and show the estimated scoring work first. Use at most 10 Jev HTTP requests in total for this task; do not raise or reset that budget. Save the three-way shadow comparison report. Do not execute tests or change CI.
+## Updates and local development
 
-Your agent needs access to the PR/MR through your existing hosting tools. Faultline saves the would-run report without executing tests. Use [the benchmark guide](../skills/faultline/references/benchmark.md) to assess the frozen proposals against existing CI outcomes; keep your existing CI test jobs unchanged.
+Rerun the skill installer to update. For the CLI, repeat the pip command with `--upgrade`. Pin CI installations to a reviewed commit.
 
-See the [workflow guide](../skills/faultline/references/graph-workflow.md) for configuration and command details.
-
-## Optional: standalone CLI for CI
-
-To use Faultline without a coding agent, install the Python package in a virtual environment:
+To use a local Faultline checkout:
 
 ```bash
-python3 -m venv ~/.venvs/faultline
-~/.venvs/faultline/bin/pip install 'git+ssh://git@github.com/ronaldtebrake/faultline.git'
-~/.venvs/faultline/bin/faultline --help
+npx skills add /path/to/faultline --skill faultline
+# Or, for the CLI:
+~/.venvs/faultline/bin/pip install -e /path/to/faultline
 ```
 
-CodeGraph is required for indexing. Your project's test runners and application environment are required for execution. For CI, pin the installation to a reviewed Git commit. Follow the same project configuration and API-key setup above, then use the commands in the [workflow guide](../skills/faultline/references/graph-workflow.md).
+Reinstall copied skills after source changes. Editable CLI installs read that checkout directly.
 
-## Updating an existing installation
-
-Reinstall/update the skill or plugin using the same method used above, then start a new agent session so it reads the new instructions. For a standalone checkout installation, reinstall from that checkout. Confirm the active engine with `faultline --version`, or `python3 "<installed-skill>/scripts/run.py" --version`: this source version is **0.6.0**. A Git-based installation receives it only after these changes are published to that Git revision.
-
-Version 0.3.0 uses a new graph artifact schema. Re-run `init --baseline <default-branch>` or import a baseline produced by this version. Old catalogs are ignored by the graph workflow; old artifacts are not overwritten.
-
-## TLS certificate errors
-
-An `SSL: CERTIFICATE_VERIFY_FAILED` error concerns Python's HTTPS trust store, not Git SSH or your Jev key. Faultline uses verified TLS and honors `SSL_CERT_FILE` / `SSL_CERT_DIR`. Where Python's certificate bundle is missing, install `certifi` in the **same Python environment that runs the skill**, for example `python3 -m pip install certifi` inside its virtual environment. Faultline automatically supplements default roots with that bundle unless explicit certificate paths are configured. Use an organization-approved CA bundle for enterprise proxies. Never disable certificate verification or edit installed skill copies as a workaround.
-
-Version 0.5.0 adds the three-way reference benchmark. Existing compatible graph artifacts and selection answer caches remain readable. Benchmark requests have a separate input contract, so their answers cannot be substituted for earlier selection judgments. New answers are stored in one SQLite file; identical benchmark inputs resume from that cache.
-
-Version 0.6.0 reports blocked preparation before inference and adds the explicit `--evidence-mode file-pairs` experiment. If preparation reports zero eligible targets, do not run the same blocked inputs again. See [bounded benchmark inputs](../skills/faultline/references/benchmark.md#when-whole-inputs-do-not-fit) for the evidence scope and remaining limits.
+If TLS verification fails, repair the active Python environment’s trust store. Optional `certifi` or approved `SSL_CERT_FILE`/`SSL_CERT_DIR` settings can provide trusted certificates. Do not disable verification.

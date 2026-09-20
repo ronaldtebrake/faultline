@@ -27,6 +27,14 @@ class Budget:
         self.used += 1
 
 
+class InvalidResponse(FaultlineError):
+    """A completed response with unusable JSON; retry only under an explicit cap."""
+
+
+class InputTooLarge(FaultlineError):
+    """Provider explicitly rejected the input token count before evaluation."""
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         # Never forward inference data or credentials to a redirected origin.
@@ -116,9 +124,18 @@ class HTTP:
                 try:
                     data = json.loads(raw)
                 except ValueError:
-                    raise FaultlineError("Jev returned malformed JSON") from None
+                    raise InvalidResponse("Jev returned malformed JSON") from None
                 return data, {}
             except urllib.error.HTTPError as exc:
+                if exc.code == 400:
+                    # Inspect only a bounded, allowlisted error type. Never log
+                    # arbitrary provider text, which may echo private inputs.
+                    try:
+                        detail = json.loads(exc.read(8192)).get('detail')
+                    except (ValueError, AttributeError, OSError):
+                        detail = None
+                    if isinstance(detail, dict) and detail.get('error_type') == 'max_tokens_exceeded':
+                        raise InputTooLarge('Jev rejected input token limits; smaller question batches are required') from None
                 if exc.code not in (429, 529):
                     raise FaultlineError(f"Jev HTTP {exc.code}; verify credentials, permissions, and request configuration. No response body was logged.") from None
                 delay = 2 * (2 ** attempt) + random.random()

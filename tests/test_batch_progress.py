@@ -8,12 +8,12 @@ from pathlib import Path
 from faultline.core import Store
 from faultline.tia.batch import BatchedJev, identity
 from faultline.tia.config import DEFAULT_EVALUATOR
-from test_graph_pipeline import answer
+from test_source_pipeline import answer
 
 
 def profile(i, source='test("access", () => expect(allowed()).toBe(true));'):
     return {'id': str(i), 'source': f'tests/{i}.feature', 'description': '', 'source_text': source,
-            'graph_evidence': {}, 'execution_context': {}}
+            'execution_context': {}}
 
 
 class BatchProgressTests(unittest.TestCase):

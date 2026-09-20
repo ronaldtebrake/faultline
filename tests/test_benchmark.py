@@ -1,4 +1,5 @@
 import copy
+import csv
 import json
 import os
 import sqlite3
@@ -6,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import test_graph_pipeline as fixture
+import test_source_pipeline as fixture
 from faultline.cli import main
 from faultline.core import FaultlineError, write_json
 from faultline.tia.batch import BatchedJev
@@ -15,14 +16,12 @@ from faultline.tia.benchmark_results import assess
 from faultline.tia.common import checked
 from faultline.tia.config import load_config
 from faultline.tia.selection import select
-from faultline.tia import graph
 
 
 class BenchmarkTests(unittest.TestCase):
-    setUp = fixture.GraphPipelineTests.setUp
-    git = fixture.GraphPipelineTests.git
-    commit = fixture.GraphPipelineTests.commit
-    publish = fixture.GraphPipelineTests.publish
+    setUp = fixture.SourcePipelineTests.setUp
+    git = fixture.SourcePipelineTests.git
+    commit = fixture.SourcePipelineTests.commit
 
     def engine(self, limit=100):
         config = {**self.config['evaluator'], 'jev_requests': limit}
@@ -33,103 +32,39 @@ class BenchmarkTests(unittest.TestCase):
                 engine.budget.take()
                 calls.append(payload)
                 targets = [q['instructions']['test'] for q in payload['questions'].values()] if isinstance(next(iter(payload['questions'].values()))['instructions'], dict) else payload['state']['tests']
-                hybrid = any(t.get('graph_evidence') for t in targets)
                 answers = {}
                 for i, t in enumerate(targets):
-                    level = ('strong' if t['source'].endswith('ATest.php') else 'weak') if hybrid else ('strong' if t['source'].endswith('BTest.php') else 'irrelevant')
+                    level = ('strong' if t['source'].endswith('BTest.php') else 'irrelevant')
                     answers[f'q{i}'] = fixture.answer(level)
                 return {'model': config['model'], 'answers': answers, 'usage': {'input_tokens': 20, 'output_tokens': 0}}, {}
         engine.http = Transport()
         return engine, calls
 
     def run_benchmark(self, **kw):
+        kw.setdefault('evidence_mode', 'whole')
         engine, calls = self.engine(kw.pop('limit', 100))
         with patch('faultline.tia.runners.invoke', side_effect=AssertionError('No runner in benchmark')):
-            result = benchmark(self.store, self.base, build_graphs=False, evaluator=engine, **kw)
+            result = benchmark(self.store, self.base, evaluator=engine, **kw)
         return result, calls
 
-    def test_three_policies_share_population_and_score_graph_disconnected_targets(self):
-        result, calls = self.run_benchmark()
-        case = checked(Path(result['json']), 'benchmark')
-        self.assertTrue(case['complete'])
-        self.assertEqual(2, result['usage']['requests'])
-        a, b = ('unit:default:tests/' + n + 'Test.php' for n in ('A', 'B'))
-        self.assertEqual([a], case['policies']['codegraph']['would_run'])
-        self.assertEqual([b], case['policies']['jev']['would_run'])
-        self.assertEqual([a, b], case['policies']['hybrid']['would_run'])
-        self.assertEqual(2, len(calls))
-        self.assertEqual([t['id'] for t in calls[0]['state']['tests']], [t['id'] for t in calls[1]['state']['tests']])
-        self.assertTrue(all(not t['graph_evidence'] for t in calls[0]['state']['tests']))
-        self.assertTrue(all(t['graph_evidence'] for t in calls[1]['state']['tests']))
-        for request in calls:
-            self.assertEqual(case['change']['diff'], request['state']['change']['diff'])
-            for test in request['state']['tests']:
-                self.assertEqual((self.root / test['source']).read_text(), test['source_evidence']['text'])
-        self.assertFalse((self.store.path / 'batch-cache').exists())
-        self.assertTrue((self.store.path / 'jev-cache.sqlite').is_file())
-        self.assertEqual(2, len(list((self.store.path / 'benchmarks').iterdir())))
-        self.assertFalse((self.store.path / 'runs').exists())
-        again, more_calls = self.run_benchmark()
-        self.assertTrue(again['complete'])
-        self.assertEqual([], more_calls)
-        self.assertEqual(0, again['usage']['requests'])
-        with patch('subprocess.run', side_effect=AssertionError('Regeneration is offline')):
-            render(result['json'])
 
-    def test_both_arms_share_one_request_limit_and_keep_pending_would_run(self):
-        before = (self.root / 'faultline.json').read_bytes()
-        result, calls = self.run_benchmark(limit=1)
-        case = checked(Path(result['json']))
-        self.assertEqual(1, len(calls))
-        self.assertEqual(1, result['usage']['requests'])
-        self.assertFalse(result['complete'])
-        self.assertEqual(2, len(case['policies']['hybrid']['unresolved']))
-        self.assertEqual(2, len(case['policies']['hybrid']['would_run']))
-        self.assertEqual(before, (self.root / 'faultline.json').read_bytes())
-        resumed, more = self.run_benchmark(limit=1)
-        self.assertEqual(1, len(more))
-        self.assertTrue(resumed['complete'])
 
-    def test_prepare_and_graph_only_need_no_jev_or_native_runtime(self):
-        with patch('faultline.tia.batch.api_key', side_effect=AssertionError('No key needed')), patch('faultline.network.HTTP.request', side_effect=AssertionError('No API')), patch('faultline.tia.runners.invoke', side_effect=AssertionError('No runners')):
-            plan = benchmark(self.store, self.base, build_graphs=False, prepare=True, max_requests=1)
-            self.assertEqual(2, plan['total_uncached_requests'])
-            self.assertEqual(1, plan['shared_request_ceiling'])
-            with patch('faultline.tia.selection.test_profile', side_effect=AssertionError('No Jev evidence construction')):
-                result = select(self.store, self.base, build_graphs=False, graph_only=True)
-                self.assertEqual('codegraph_only', result['analysis_mode'])
-                self.assertEqual(0, result['usage']['requests'])
-                self.assertEqual(1, result['proposed_selected'])
-                report = checked(Path(result['report']['json']))
-                self.assertFalse(report['graph_comparison']['available'])
-            with patch('builtins.print'):
-                self.assertEqual(0, main(['--root', str(self.root), 'select', '--base', self.base, '--no-build', '--graph-only']))
-        self.assertFalse((self.store.path / 'jev-cache.sqlite').exists())
 
     def test_reference_refuses_arbitrary_fragmentation(self):
         (self.root / 'tests/BTest.php').write_text('<?php /* ' + 'large test evidence ' * 4000 + ' */')
         self.commit()
         self.head = self.git('rev-parse', 'HEAD').strip()
-        self.publish(self.head)
         result, calls = self.run_benchmark()
         self.assertFalse(result['complete'])
         case = checked(Path(result['json']))
-        for arm in ('jev', 'hybrid'):
+        for arm in ('jev',):
             self.assertIn('unit:default:tests/BTest.php', case['policies'][arm]['unresolved'])
             self.assertTrue(any('no truncation' in error for error in case['policies'][arm]['errors'].values()))
         self.assertEqual([], calls)  # The cumulative diff alone also exceeds this fixture's bound.
 
-    def test_graph_failure_is_visible_but_does_not_hide_jev_candidates(self):
-        (self.artifacts[0] / 'graph.sqlite').write_bytes(b'corrupt')
-        result, calls = self.run_benchmark()
-        case = checked(Path(result['json']))
-        self.assertFalse(result['complete'])
-        self.assertEqual(2, len(case['policies']['codegraph']['would_run']))
-        self.assertEqual(2, len(case['policies']['jev']['judgments']))
-        self.assertEqual(2, len(case['policies']['hybrid']['judgments']))
 
     def outcomes(self, case):
-        ids = case['policies']['codegraph']['ranking']
+        ids = case['policies']['jev']['ranking']
         return {'schema_version': 2, 'benchmark_id': case['integrity'], 'repository': case['repository'],
                 'base': case['change']['base'], 'head': case['change']['head'], 'attempt_id': 'ci-attempt-1',
                 'outcome_blind': True, 'complete': True, 'inventory': {id: [id + '::test'] for id in ids},
@@ -145,15 +80,13 @@ class BenchmarkTests(unittest.TestCase):
         with patch('subprocess.run', side_effect=AssertionError('Outcome import must stay offline')):
             measured = assess(self.store, result['json'], path)
         self.assertTrue(measured['eligible_for_recall'])
-        self.assertEqual(0, measured['policies']['codegraph']['failing_test_recall'])
         self.assertEqual(1, measured['policies']['jev']['failing_test_recall'])
-        self.assertEqual(1, measured['policies']['hybrid']['failing_test_recall'])
+        self.assertEqual(1, measured['policies']['jev']['failing_test_recall'])
         self.assertEqual(1, measured['policies']['jev']['raw_ranking_recall_at_units']['1'])
         assessment = checked(Path(measured['json']))
-        self.assertEqual(['jev', 'hybrid'], assessment['regression_detections'][0]['caught_by'])
+        self.assertEqual(['jev'], assessment['regression_detections'][0]['caught_by'])
         self.assertIsNone(assessment['measured_ci_savings_seconds'])
         self.assertEqual(1, assessment['failure_counts']['regression'])
-        self.assertEqual(3, measured['policies']['codegraph']['potential_serial_test_seconds_avoided'])
         markdown = Path(measured['markdown']).read_text()
         self.assertIn('infrastructure: 0', markdown)
         self.assertIn('Potential serial test work avoided', markdown)
@@ -182,20 +115,43 @@ class BenchmarkTests(unittest.TestCase):
             observed = assess(self.store, result['json'], path)
             self.assertTrue(all(p['failing_test_recall'] is None for p in observed['policies'].values()))
 
-    def test_semantic_policies_can_narrow_a_graph_hint(self):
+    def test_unknown_failures_stay_visible_without_claiming_regression_recall(self):
+        result, _ = self.run_benchmark()
+        case = checked(Path(result['json']))
+        data = self.outcomes(case)
+        data['complete'] = False
+        data['tests'] = [t for t in data['tests'] if t['status'] == 'failed']
+        data['tests'][0]['failure_kind'] = 'unknown'
+        data['tests'][0]['evidence'] = 'Assertion failed; cause not established'
+        path = self.store.path / 'partial-outcomes.json'
+        write_json(path, data)
+        measured = assess(self.store, result['json'], path)
+        assessment = checked(Path(measured['json']))
+        self.assertFalse(measured['eligible_for_recall'])
+        self.assertEqual([], assessment['regression_detections'])
+        self.assertEqual(1, assessment['unknown_failures'])
+        self.assertEqual({'jev': 'RUN'},
+                         assessment['observed_failure_detections'][0]['actions'])
+        self.assertIn('Observed failed tests', Path(measured['markdown']).read_text())
+        self.assertTrue(all(p['failing_test_recall'] is None for p in measured['policies'].values()))
+        data['tests'][0]['unit_id'] = 'unmapped-unit'
+        write_json(path, data)
+        unmapped = checked(Path(assess(self.store, result['json'], path)['json']))
+        self.assertEqual({'UNMAPPED'}, set(unmapped['observed_failure_detections'][0]['actions'].values()))
+
+    def test_jev_can_omit_all_nonmandatory_targets(self):
         engine, calls = self.engine()
         class Irrelevant:
             def request(inner, url, payload, **kw):
                 engine.budget.take()
                 return {'model': engine.config['model'], 'answers': {q: fixture.answer() for q in payload['questions']}}, {}
         engine.http = Irrelevant()
-        result = benchmark(self.store, self.base, build_graphs=False, evaluator=engine)
+        result = benchmark(self.store, self.base, evaluator=engine)
         case = checked(Path(result['json']))
-        self.assertEqual(1, len(case['policies']['codegraph']['would_run']))
         self.assertEqual([], case['policies']['jev']['would_run'])
-        self.assertEqual([], case['policies']['hybrid']['would_run'])
+        self.assertEqual([], case['policies']['jev']['would_run'])
 
-    def test_gherkin_source_without_graph_nodes_is_assessed_in_both_arms(self):
+    def test_gherkin_source_is_assessed(self):
         path = self.root / 'features/access.feature'
         path.parent.mkdir()
         path.write_text('Feature: Access\n Scenario: Denied\n Then access is denied\n')
@@ -204,11 +160,10 @@ class BenchmarkTests(unittest.TestCase):
         self.commit()
         self.head = self.git('rev-parse', 'HEAD').strip()
         self.config = load_config(self.root)
-        self.publish(self.head)
         result, calls = self.run_benchmark()
         case = checked(Path(result['json']))
         id = 'behavior:default:features/access.feature'
-        for arm in ('jev', 'hybrid'):
+        for arm in ('jev',):
             self.assertIn(id, case['policies'][arm]['judgments'])
         self.assertTrue(all(any(t['source_evidence']['text'] == path.read_text() for t in request['state']['tests']) for request in calls))
 
@@ -237,8 +192,8 @@ class BenchmarkTests(unittest.TestCase):
 
     def test_cli_reference_preflight_and_partial_exit_codes(self):
         with patch('builtins.print'), patch('faultline.tia.batch.api_key', side_effect=AssertionError('No inference allowed')):
-            self.assertEqual(0, main(['--root', str(self.root), 'benchmark', '--base', self.base, '--no-build', '--prepare']))
-            self.assertEqual(2, main(['--root', str(self.root), 'benchmark', '--base', self.base, '--no-build', '--max-requests', '0', '--title', 'Pre-outcome intent']))
+            self.assertEqual(0, main(['--root', str(self.root), 'benchmark', '--base', self.base, '--prepare']))
+            self.assertEqual(2, main(['--root', str(self.root), 'benchmark', '--base', self.base, '--max-requests', '0', '--title', 'Pre-outcome intent']))
         case = checked(next((self.store.path / 'benchmarks').glob('*.json')))
         self.assertEqual('Pre-outcome intent', case['change']['title'])
         self.assertEqual(0, case['usage']['requests'])
@@ -249,7 +204,6 @@ class BenchmarkTests(unittest.TestCase):
         self.commit()
         self.head = self.git('rev-parse', 'HEAD').strip()
         self.config = load_config(self.root)
-        self.publish(self.head)
         result, calls = self.run_benchmark()
         case = checked(Path(result['json']))
         self.assertFalse(case['complete'])
@@ -273,27 +227,27 @@ class BenchmarkTests(unittest.TestCase):
         context = change(self.root, self.base, self.head)
         context['diff'] = 'diff --git a/large.txt b/large.txt\n' + '+' + 'x' * 70000
         with patch('faultline.tia.benchmark.change', return_value=context), patch('faultline.tia.batch.api_key', side_effect=AssertionError('No API')):
-            result = benchmark(self.store, self.base, build_graphs=False, prepare=True)
+            result = benchmark(self.store, self.base, prepare=True)
             self.assertFalse(result['complete'])
             self.assertFalse(result['preparation']['ready'])
-            self.assertEqual({'jev': 0, 'hybrid': 0}, result['preparation']['eligible_targets'])
+            self.assertEqual({'jev': 0}, result['preparation']['eligible_targets'])
             self.assertGreater(result['preparation']['input_sizes']['diff_bytes'], 70000)
             with patch('builtins.print'):
-                self.assertEqual(2, main(['--root', str(self.root), 'benchmark', '--base', self.base, '--no-build', '--prepare']))
+                self.assertEqual(2, main(['--root', str(self.root), 'benchmark', '--base', self.base, '--prepare']))
 
     def test_file_pair_questions_share_only_change_and_keep_whole_tests(self):
         result, calls = self.run_benchmark(evidence_mode='file-pairs')
         case = checked(Path(result['json']))
         self.assertEqual('reference-file-pairs-v1', case['contract'])
         self.assertTrue(case['complete'])
-        self.assertEqual(2, len(calls))
+        self.assertEqual(1, len(calls))
         for request in calls:
             self.assertTrue(all(set(t) == {'id', 'source'} for t in request['state']['tests']))
             for question in request['questions'].values():
                 target = question['instructions']['test']
                 self.assertEqual((self.root / target['source']).read_text(), target['source_evidence']['text'])
                 self.assertFalse(target['execution_context']['setup_bodies_supplied'])
-        for arm in ('jev', 'hybrid'):
+        for arm in ('jev',):
             self.assertEqual(2, len(case['policies'][arm]['judgments']))
             self.assertTrue(all(row['evidence_complete'] for row in case['policies'][arm]['judgments'].values()))
 
@@ -312,7 +266,7 @@ class BenchmarkTests(unittest.TestCase):
         case = checked(Path(result['json']))
         self.assertTrue(result['complete'])
         self.assertGreater(len(resumed_calls), 0)
-        for arm in ('jev', 'hybrid'):
+        for arm in ('jev',):
             for row in case['policies'][arm]['judgments'].values():
                 spans = sorted((part['change_window']['start_char'], part['change_window']['end_char']) for part in row['parts'])
                 self.assertEqual(0, spans[0][0])
@@ -333,7 +287,6 @@ class BenchmarkTests(unittest.TestCase):
         self.commit()
         self.head = self.git('rev-parse', 'HEAD').strip()
         self.config = load_config(self.root)
-        self.publish(self.head)
         result, calls = self.run_benchmark(evidence_mode='file-pairs')
         # The large setup addition is a single oversized changed-file section:
         # it must stay blocked rather than being silently excluded from the diff.
@@ -347,22 +300,324 @@ class BenchmarkTests(unittest.TestCase):
         self.assertTrue(all('setup content ' not in json.dumps(request) for request in calls))
         self.assertTrue(all(q['instructions']['test']['execution_context']['setup_source_count'] == 1 for request in calls for q in request['questions'].values()))
 
-    def test_graph_budget_is_checked_before_archive_export(self):
-        from faultline.tia.graph import extract
-        settings = {**self.config['graph'], 'max_source_bytes': 1}
-        with patch('faultline.tia.graph.subprocess.run', wraps=__import__('subprocess').run) as invoked:
-            with self.assertRaisesRegex(FaultlineError, 'no archive was exported'):
-                extract(self.root, self.head, self.root / 'snapshot', settings)
-        self.assertFalse(any('archive' in call.args[0] for call in invoked.call_args_list))
-        self.assertFalse((self.root / 'source.tar').exists())
 
-    @unittest.skipUnless(os.environ.get('FAULTLINE_CODEGRAPH'), 'Requires the pinned CodeGraph executable')
-    def test_fresh_baselines_do_not_seed_from_an_existing_graph(self):
-        fresh = graph.build(self.store, self.config, self.base, fresh=True)
-        self.assertEqual('fresh', fresh['build_mode'])
-        self.assertIsNone(fresh['reused_from'])
-        self.assertNotEqual(self.artifacts[0], Path(fresh['path']))
-        restored = graph.build(self.store, self.config, self.base, fresh=True)
-        self.assertTrue(restored['cache_hit'])
-        with self.assertRaisesRegex(FaultlineError, 'cannot reuse'):
-            graph.build(self.store, self.config, self.head, fresh=True, reuse=fresh['path'])
+
+    def test_source_mode_sends_full_change_with_independent_whole_targets(self):
+        result, calls = self.run_benchmark(evidence_mode='source')
+        case = checked(Path(result['json']))
+        self.assertEqual('reference-source-v1', case['contract'])
+        self.assertEqual(1, len(calls))
+        for request in calls:
+            self.assertEqual(case['change']['diff'], request['state']['change']['diff'])
+            self.assertTrue(request['state']['change']['diff_evidence']['is_whole'])
+            self.assertNotIn('source_evidence', request['state']['tests'][0])
+            for q in request['questions'].values():
+                target = q['instructions']['test']
+                self.assertEqual((self.root / target['source']).read_text(), target['source_evidence']['text'])
+                self.assertFalse(target['execution_context']['setup_bodies_supplied'])
+        again, requests = self.run_benchmark(evidence_mode='source')
+        self.assertEqual([], requests)
+        self.assertEqual(2, sum(p['cache_hits'] for a, p in checked(Path(again['json']))['policies'].items()))
+
+    def test_source_byte_overrides_do_not_edit_configuration(self):
+        before = (self.root / 'faultline.json').read_bytes()
+        result, calls = self.run_benchmark(evidence_mode='source', max_state_bytes=100, max_batch_bytes=200)
+        self.assertEqual([], calls)
+        self.assertEqual('blocked', result['preparation']['status'])
+        self.assertEqual(before, (self.root / 'faultline.json').read_bytes())
+        for arm in ('jev',):
+            self.assertEqual({'retained': 0, 'required': 0, 'unresolved': 2, 'omit': 0}, result['decisions'][arm])
+
+    def test_unresolved_is_not_an_assessed_recommendation(self):
+        result, calls = self.run_benchmark(evidence_mode='source', limit=0)
+        case = checked(Path(result['json']))
+        policy = case['policies']['jev']
+        groups = [set(ids) for ids in policy['decision_groups'].values()]
+        self.assertEqual(set(policy['ranking']), set.union(*groups))
+        self.assertEqual(len(policy['ranking']), sum(map(len, groups)))
+        self.assertEqual(2, len(policy['would_run']))
+        self.assertEqual([], policy['retained'])
+        self.assertEqual(2, result['decisions']['jev']['unresolved'])
+        self.assertEqual([], calls)
+
+    def test_source_mode_assesses_gherkin(self):
+        feature = self.root / 'features/search.feature'
+        feature.parent.mkdir()
+        text = 'Feature: Search\n  Background:\n    Given a signed in reader\n  Scenario Outline: Find records\n    When I search for <query>\n    Then I see <result>\n    Examples:\n      | query | result |\n      | cats | pets |\n'
+        feature.write_text(text)
+        self.raw['suites'].append({'id': 'behavior', 'runner': 'behat', 'sources': ['features/**/*.feature']})
+        write_json(self.root / 'faultline.json', self.raw)
+        self.commit()
+        self.head = self.git('rev-parse', 'HEAD').strip()
+        self.config = load_config(self.root)
+        result, calls = self.run_benchmark(evidence_mode='source')
+        supplied = [q['instructions']['test'] for r in calls for q in r['questions'].values() if q['instructions']['test']['source'].endswith('.feature')]
+        self.assertEqual(1, len(supplied))
+        self.assertTrue(all(t['source_evidence']['text'] == text for t in supplied))
+        case = checked(Path(result['json']))
+        for arm in ('jev',):
+            self.assertIn(supplied[0]['id'], case['policies'][arm]['judgments'])
+            self.assertIn(supplied[0]['id'], case['policies'][arm]['required'])
+
+
+    def test_report_prices_each_arm_without_mutating_frozen_evidence(self):
+        result, _ = self.run_benchmark()
+        before = Path(result['json']).read_bytes()
+        price = {'model': self.config['evaluator']['model'], 'as_of': '2026-09-20', 'input_usd_per_million': 1, 'source': 'https://example.org/pricing'}
+        with patch('faultline.network.HTTP.request', side_effect=AssertionError('Offline report only')):
+            report = render(result['json'], pricing=price, output=self.store.path / 'decision-review.md')
+        self.assertEqual(before, Path(result['json']).read_bytes())
+        for arm in ('jev',):
+            m = report['routing']['policies'][arm]
+            self.assertEqual(20, m['input_tokens'])
+            self.assertAlmostEqual(.00002, m['input_usd_estimate'])
+        text = Path(report['markdown']).read_text()
+        self.assertNotIn('recommended', text)
+        self.assertIn('Input tokens: **20**', text)
+        self.assertIn('report override', text)
+        self.assertTrue(Path(report['csv']).is_file())
+        self.assertEqual(before, Path(result['json']).read_bytes())
+
+    def test_missing_usage_and_retry_costs_remain_unknown(self):
+        from faultline.tia.benchmark_report import usage_metrics
+        price = {'input_usd_per_million': 1}
+        for records in ([{'input_tokens': 100}], [{'input_tokens': 100}, None]):
+            m = usage_metrics({'requests': 2, 'usage': records}, price)
+            self.assertIsNone(m['input_tokens'])
+            self.assertIsNone(m['input_usd_estimate'])
+            self.assertEqual(100, m['reported_input_tokens'])
+        m = usage_metrics({'requests': 0, 'usage': [], 'cache_hits': 5}, None)
+        self.assertEqual(0, m['input_usd_estimate'])
+        self.assertEqual(5, m['cache_hits'])
+
+    def test_report_preserves_notes_for_exact_case_and_rejects_cross_case_reuse(self):
+        result, _ = self.run_benchmark()
+        path = Path(result['csv'])
+        with path.open(newline='') as stream:
+            reader = csv.DictReader(stream)
+            fields, rows = reader.fieldnames, list(reader)
+        rows[0]['review_notes'] = 'Needs review, with source evidence.'
+        with path.open('w', newline='') as stream:
+            writer = csv.DictWriter(stream, fields)
+            writer.writeheader()
+            writer.writerows(rows)
+        before = Path(result['json']).read_bytes()
+        render(result['json'])
+        with path.open(newline='') as stream:
+            saved = list(csv.DictReader(stream))
+        self.assertEqual(rows[0]['review_notes'], saved[0]['review_notes'])
+        self.assertEqual(before, Path(result['json']).read_bytes())
+        another, _ = self.run_benchmark()
+        with self.assertRaisesRegex(FaultlineError, 'review notes'):
+            render(another['json'], output=path.with_suffix('.md'))
+
+    def test_report_keeps_required_and_unassessed_counts_distinct(self):
+        from faultline.tia.benchmark_report import routing_data
+        result, _ = self.run_benchmark(limit=0)
+        case = checked(Path(result['json']))
+        id = case['policies']['jev']['ranking'][0]
+        case['policies']['jev']['required'] = [id]
+        data = routing_data(case)
+        m = data['policies']['jev']
+        self.assertEqual(2, m['would_run'])
+        self.assertEqual(1, m['run_required'])
+        self.assertEqual(1, m['run_unresolved'])
+        self.assertEqual(2, m['unresolved_assessments'])
+        self.assertEqual(0, m['valid_judgments'])
+        self.assertTrue(all(r['jev_action'] == 'RUN' for r in data['targets']))
+
+    def test_report_cli_supports_dated_pricing_and_output_without_inference(self):
+        result, _ = self.run_benchmark()
+        price = self.root / 'price.json'
+        write_json(price, {'model': self.config['evaluator']['model'], 'as_of': '2026-09-20', 'input_usd_per_million': .042})
+        before = Path(result['json']).read_bytes()
+        with patch('faultline.network.HTTP.request', side_effect=AssertionError('Offline')), patch('builtins.print'):
+            code = main(['--root', str(self.root), 'benchmark-report', '--benchmark', result['json'], '--pricing', 'price.json', '--output', '.faultline/report.md'])
+        self.assertEqual(0, code)
+        self.assertTrue((self.store.path / 'report.csv').is_file())
+        self.assertEqual(before, Path(result['json']).read_bytes())
+        from faultline.tia.benchmark_report import validate_pricing
+        for bad in ({'as_of': 'yesterday', 'input_usd_per_million': .042},
+                    {'as_of': '2026-09-20', 'input_usd_per_million': -1},
+                    {'as_of': '2026-09-20', 'input_usd_per_million': .042, 'model': 'jev-0.0.0'}):
+            with self.assertRaises(FaultlineError):
+                validate_pricing(bad, self.config['evaluator']['model'])
+
+    def test_pr_comment_reuses_decisions_without_source_or_local_paths(self):
+        result, _ = self.run_benchmark(evidence_mode='source')
+        before = Path(result['json']).read_bytes()
+        output = self.store.path / 'pr-comment.md'
+        files_before = set(self.store.path.iterdir())
+        price = {'as_of': '2026-09-20', 'input_usd_per_million': .042}
+        with patch('faultline.network.HTTP.request', side_effect=AssertionError('Offline preview')):
+            comment = render(result['json'], format='comment', pricing=price, output=output,
+                             report_url='https://ci.example.org/artifacts/routing')
+        text = output.read_text()
+        self.assertEqual(before, Path(result['json']).read_bytes())
+        self.assertFalse(comment['published'])
+        self.assertEqual('comment', comment['format'])
+        self.assertEqual({output}, set(self.store.path.iterdir()) - files_before)
+        self.assertTrue(text.startswith('<!-- faultline:benchmark-report -->'))
+        self.assertIn('https://ci.example.org/artifacts/routing', text)
+        self.assertIn('Shadow mode', text)
+        self.assertIn('<details>', text)
+        self.assertIn('1 RUN / 1 OMIT', text)
+        self.assertIn('2/2', text)
+        self.assertNotIn('recommended', text)
+        self.assertNotIn('tests/ATest.php', text)
+        self.assertNotIn(str(self.root), text)
+        self.assertNotIn('\u200b', text)
+        self.assertLess(len(text), 4500)
+        self.assertEqual(result['routing']['policies']['jev']['would_run'], comment['routing']['policies']['jev']['would_run'])
+
+    def test_pr_comment_marks_unassessed_and_unknown_costs(self):
+        result, _ = self.run_benchmark(limit=0)
+        case = checked(Path(result['json']))
+        # A billed attempt with unavailable usage must remain unknown.
+        case['policies']['jev'].update(requests=1, usage=[None])
+        comment = render(result['json'], case, format='comment', pricing={'as_of': '2026-09-20', 'input_usd_per_million': .042})
+        text = Path(comment['markdown']).read_text()
+        self.assertIn('Incomplete assessment', text)
+        self.assertIn('Valid judgments: **0/2**', text)
+        self.assertIn('Unresolved targets stay RUN', text)
+        self.assertIn('| Jev | 2 | 0 | 2 | unknown | unknown |', text)
+        self.assertIn('Full report: not linked yet.', text)
+        self.assertIsNone(comment['report_url'])
+
+    def test_pr_comment_url_validation_and_cli(self):
+        from faultline.tia.benchmark_report import comment_report_url
+        for url in ('file:///tmp/report.md', '/tmp/report.md', 'http://ci.example.org/report',
+                    'https://user:secret@ci.example.org/report', 'https://ci.example.org/a)\nInjected',
+                    'https://', 'https://ci.example.org/[report]'):
+            with self.assertRaises(FaultlineError):
+                comment_report_url(url)
+        result, _ = self.run_benchmark()
+        before = Path(result['json']).read_bytes()
+        with patch('faultline.network.HTTP.request', side_effect=AssertionError('No inference')), patch('builtins.print'):
+            code = main(['--root', str(self.root), 'benchmark-report', '--benchmark', result['json'],
+                         '--format', 'comment', '--report-url', 'https://ci.example.org/report', '--output', '.faultline/comment.md'])
+        self.assertEqual(0, code)
+        self.assertEqual(before, Path(result['json']).read_bytes())
+        self.assertTrue((self.store.path / 'comment.md').is_file())
+        self.assertFalse((self.store.path / 'comment.csv').exists())
+
+    def test_offline_policy_report_preserves_evidence_notes_and_configuration(self):
+        result, _ = self.run_benchmark(evidence_mode='source')
+        evidence = Path(result['json']).read_bytes()
+        config = (self.root / 'faultline.json').read_bytes()
+        output = self.store.path / 'policies.md'
+        with patch('faultline.network.HTTP.request', side_effect=AssertionError('No inference')), patch('subprocess.run', side_effect=AssertionError('No runner')):
+            report = render(result['json'], output=output, compare_policies=True, file_budgets=[1])
+            with Path(report['csv']).open(newline='') as stream:
+                reader = csv.DictReader(stream)
+                fields, rows = reader.fieldnames, list(reader)
+            rows[0]['review_notes'] = 'Review without changing evidence'
+            with Path(report['csv']).open('w', newline='') as stream:
+                writer = csv.DictWriter(stream, fields)
+                writer.writeheader()
+                writer.writerows(rows)
+            render(result['json'], output=output, compare_policies=True, file_budgets=[1])
+            with Path(report['csv']).open(newline='') as stream:
+                again = list(csv.DictReader(stream))
+        self.assertEqual(rows[0]['review_notes'], again[0]['review_notes'])
+        self.assertIn('relevance_0_1_jev_action', fields)
+        self.assertIn('jev_p_meaningful_relevance', fields)
+        comparison = json.loads(Path(report['policy_comparison']).read_text())
+        self.assertEqual(0, comparison['new_input_tokens'])
+        self.assertIn('Offline policy comparison', output.read_text())
+        self.assertEqual(evidence, Path(result['json']).read_bytes())
+        self.assertEqual(config, (self.root / 'faultline.json').read_bytes())
+        self.assertFalse((self.store.path / 'runs').exists())
+
+    def test_offline_policy_cli_comment_and_parameter_errors(self):
+        result, _ = self.run_benchmark(evidence_mode='source')
+        args = ['--root', str(self.root), 'benchmark-report', '--benchmark', result['json']]
+        with patch('faultline.network.HTTP.request', side_effect=AssertionError('No inference')), patch('builtins.print'):
+            self.assertEqual(0, main(args + ['--compare-policies', '--relevance-thresholds', '.1', '.25', '.5',
+                                           '--file-budgets', '1', '--format', 'comment', '--output', '.faultline/compare-comment.md']))
+            self.assertEqual(1, main(args + ['--file-budgets', '1']))
+            self.assertEqual(1, main(args + ['--compare-policies', '--relevance-thresholds', 'nan']))
+            self.assertEqual(1, main(args + ['--compare-policies', '--outcomes', 'missing.json']))
+        text = (self.store.path / 'compare-comment.md').read_text()
+        self.assertIn('Relevance >= 10%', text)
+        self.assertIn('0 new tokens', text)
+        self.assertNotIn(str(self.root), text)
+        self.assertLess(len(text), 4500)
+        self.assertFalse((self.store.path / 'compare-comment.csv').exists())
+
+    def test_frozen_policy_comparison_can_be_assessed_but_not_modified(self):
+        result, _ = self.run_benchmark(evidence_mode='source')
+        report = render(result['json'], compare_policies=True)
+        case = checked(Path(result['json']))
+        outcomes = self.store.path / 'outcomes.json'
+        write_json(outcomes, self.outcomes(case))
+        comparison = Path(report['policy_comparison'])
+        assessed = assess(self.store, result['json'], outcomes, policy_comparison=comparison)
+        self.assertTrue(assessed['counterfactual_policies'])
+        self.assertEqual(1, assessed['counterfactual_policies']['relevance_0_5:jev']['caught_regression_tests'])
+        self.assertEqual(1, assessed['counterfactual_policies']['relevance_0_5:jev']['caught_regression_tests'])
+        bad = json.loads(comparison.read_text())
+        bad['scenarios'][1]['approaches']['jev']['would_run'] = 999
+        write_json(comparison, bad)
+        with self.assertRaisesRegex(FaultlineError, 'does not match'):
+            assess(self.store, result['json'], outcomes, policy_comparison=comparison)
+
+
+    def test_single_evaluator_scores_every_source_and_reuses_exact_inputs(self):
+        result, calls = self.run_benchmark(evidence_mode='source')
+        case = checked(Path(result['json']))
+        self.assertEqual({'jev'}, set(case['policies']))
+        self.assertEqual(1, len(calls))
+        self.assertEqual(2, len(case['policies']['jev']['judgments']))
+        self.assertTrue(case['complete'])
+        self.assertEqual(case['change']['diff'], calls[0]['state']['change']['diff'])
+        for q in calls[0]['questions'].values():
+            target = q['instructions']['test']
+            self.assertEqual((self.root / target['source']).read_text(), target['source_evidence']['text'])
+        again, more = self.run_benchmark(evidence_mode='source')
+        self.assertEqual([], more)
+        self.assertEqual(0, again['usage']['requests'])
+        self.assertEqual(2, again['routing']['policies']['jev']['cache_hits'])
+        self.assertFalse((self.store.path / 'runs').exists())
+
+    def test_budget_stops_and_resume_uses_answers_without_resetting_config(self):
+        self.raw['evaluator'] = {'max_batch_units': 1}
+        write_json(self.root / 'faultline.json', self.raw)
+        self.commit()
+        # Separate local fixture setup from the assessed production change.
+        base = self.git('rev-parse', 'HEAD').strip()
+        (self.root / 'src/Policy.php').write_text('<?php return false;')
+        self.commit()
+        self.base, self.config = base, load_config(self.root)
+        before = (self.root / 'faultline.json').read_bytes()
+        result, calls = self.run_benchmark(limit=1)
+        case = checked(Path(result['json']))
+        self.assertFalse(result['complete'])
+        self.assertEqual(1, len(calls))
+        self.assertEqual(1, len(case['policies']['jev']['unresolved']))
+        self.assertTrue(set(case['policies']['jev']['unresolved']) <= set(case['policies']['jev']['would_run']))
+        resumed, calls = self.run_benchmark(limit=1)
+        self.assertTrue(resumed['complete'])
+        self.assertEqual(1, len(calls))
+        self.assertEqual(before, (self.root / 'faultline.json').read_bytes())
+
+    def test_prepare_has_no_credentials_network_or_runner_dependency(self):
+        with patch('faultline.tia.batch.api_key', side_effect=AssertionError('No key')), patch('faultline.network.HTTP.request', side_effect=AssertionError('No API')), patch('faultline.tia.runners.invoke', side_effect=AssertionError('No runner')):
+            result = benchmark(self.store, self.base, prepare=True, max_requests=1)
+        self.assertEqual(1, result['total_uncached_requests'])
+        self.assertEqual({'jev': 2}, result['preparation']['eligible_targets'])
+        self.assertEqual('git', result['index']['basis'])
+        self.assertTrue(result['complete'])
+        self.assertFalse((self.store.path / 'jev-cache.sqlite').exists())
+
+    def test_model_irrelevant_label_is_distinct_from_policy_cutoff(self):
+        from faultline.tia.benchmark_report import routing_data
+        result, _ = self.run_benchmark(evidence_mode='source')
+        case = checked(Path(result['json']))
+        id = case['policies']['jev']['would_run'][0]
+        row = case['policies']['jev']['judgments'][id]
+        row.update(choice='irrelevant', probabilities=dict(irrelevant=.93, weak=.06, plausible=.01, strong=0, direct=0))
+        target = next(t for t in routing_data(case)['targets'] if t['target'] == id)
+        self.assertEqual('RUN', target['jev_action'])
+        self.assertEqual('irrelevant', target['jev_model_choice'])
+        self.assertIn('93.0% irrelevant < 95.0%', target['jev_reason'])

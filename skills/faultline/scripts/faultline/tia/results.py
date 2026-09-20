@@ -1,7 +1,6 @@
 """Import exact native outcomes after execution and report shadow measurements."""
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from pathlib import Path
 
@@ -154,18 +153,17 @@ def record(store, selection_path, run_path, input_path=None, *, format=None, out
                         'repository': selection['repository'], 'change': {k: selection['change'][k] for k in ('id', 'base', 'head')},
                         'policy_key': policy_key, 'policy': selection['policy'], 'suite_key': suite['key'],
                         'expected_suites': [s['key'] for s in selection['suites']],
-                        'cost': selection['cost'], 'graph_seconds': selection['graph_seconds'],
+                        'cost': selection['cost'], 'source_seconds': selection['source_seconds'],
                         'inference_seconds': selection['inference_seconds'],
                         'metrics': measure(selection, suite, receipt, tests, complete), 'tests': tests,
                         'units': [{'id': u['id'], 'source': u['source'], 'proposed_selected': u['id'] in suite['proposed_selected'],
-                                   'reasons': suite['reasons'][u['id']], 'judgment': selection['judgments'].get(u['id']),
-                                   'graph_paths': selection['graph']['paths'].get(u['source'], [])} for u in suite['units']],
+                                   'reasons': suite['reasons'][u['id']], 'judgment': selection['judgments'].get(u['id'])} for u in suite['units']],
                         'missing': [{'id': id, 'member': member} for id, member in sorted(expected - seen)],
-                        'unmatched': unmatched, 'usage': selection['usage'], 'graph': selection['graph'],
+                        'unmatched': unmatched, 'usage': selection['usage'],
                         'fallbacks': sorted(set(suite['fallbacks'] + receipt['validation_fallbacks'])),
                         'native_inventory': native, 'proposal_validated': receipt['proposal_validated'],
                         'selection_seconds': selection['selection_seconds'],
-                        'limitations': ['Static graph evidence and semantic relevance are not measured coverage.',
+                        'limitations': ['Semantic relevance is not measured coverage.',
                                         'This explicit evaluation executed the full suite; no test execution was avoided.',
                                         'Potential timing assumes serial tests, unchanged durations, and zero setup savings; selection and runner-validation overhead are charged to this suite in full.',
                                         'Agent costs, setup/jobs avoided, parallel critical-path savings, and audit overhead are not measured.',
@@ -195,7 +193,7 @@ def write_report(store, observation, *, output=None):
     text += ['', '## Observed missed regressions', '']
     text += [f"- {cell(t['id'])}: {cell(t['member'])}. Evidence: {cell(t['evidence'])}" for t in misses] or ['No confirmed missed regression observed; this is not evidence that selection is safe.']
     text += ['', '## Evidence and limits', '', f"Jev HTTP requests: {observation['usage']['requests']}; cached judgments: {observation['usage']['cache_hits']}.",
-             '', f"Graph preparation: {observation['graph_seconds']:.3f}s; inference: {observation['inference_seconds']:.3f}s; input cost estimate: {observation['cost']['input_usd_estimate']}.", '', 'Fallbacks: ' + (', '.join(observation['fallbacks']) or 'none') + '.', '']
+             '', f"Source preparation: {observation['source_seconds']:.3f}s; inference: {observation['inference_seconds']:.3f}s; input cost estimate: {observation['cost']['input_usd_estimate']}.", '', 'Fallbacks: ' + (', '.join(observation['fallbacks']) or 'none') + '.', '']
     text += ['- ' + item for item in observation['limitations']]
     output.parent.mkdir(parents=True, exist_ok=True)
     write_json(output.with_suffix('.json'), observation)

@@ -30,7 +30,7 @@ class FilePairPlan:
         for profile in sorted(profiles, key=lambda p: (len(p['source_text'].encode()), p['id'])):
             allowed = tuple(arm for arm in ARMS if all(self.fits([profile], start, end, (arm,)) for start, end in self.sections))
             for arm in set(ARMS) - set(allowed):
-                self.rejected[arm][profile['id']] = 'A whole test, graph context, or complete changed-file section exceeds payload limits; no source was truncated'
+                self.rejected[arm][profile['id']] = 'A whole test or complete changed-file section exceeds payload limits; no source was truncated'
             if len(allowed) < len(ARMS):
                 if cohort:
                     self.pack(cohort, ARMS)

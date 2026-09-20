@@ -1,5 +1,5 @@
-"""Source-target projection shared by graph publication and explicit native enrichment."""
-from ..core import digest, now
+"""Configured source targets with optional native runner enrichment."""
+from ..core import now
 from .common import glob_files, hashes, revision, seal
 from .config import SCHEMA, variants
 from .runners import discover_suite
@@ -31,7 +31,6 @@ def source_inventory(root, config, *, native=False, snapshot=None):
                           'source': source, 'members': [], 'locator': {'file': source},
                           'title': suite['id'] if whole else source,
                           'kind': 'check' if whole else 'source',
-                          'description_hash': digest({'sources': fingerprint}),
                           'source_hashes': fingerprint})
         row = {'key': key, 'suite': suite['id'], 'variant': variant['id'], 'runner': suite['runner'],
                'kind': suite['kind'], 'complete': bool(units), 'units': units,

@@ -7,7 +7,7 @@ import tempfile
 import subprocess
 from pathlib import Path
 
-from ..core import FaultlineError, digest, read_json, write_json
+from ..core import FaultlineError, digest, read_json
 from .config import SCHEMA, inside
 
 

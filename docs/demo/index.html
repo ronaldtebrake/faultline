@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="One diff. Fewer tests. An interactive, fictional look at Jev-powered test impact analysis with Faultline.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'">
+<title>Faultline · Same change. Fewer tests.</title>
+<style>
+:root{color-scheme:light;--bg:#f1f2ed;--paper:#fafbf7;--ink:#1b2824;--muted:#69716b;--line:#dfe4dc;--violet:#7552d9;--violet-soft:#f0ebfd;--green:#15674c;--green-soft:#e1f3df}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button{font:inherit;cursor:pointer}button:focus-visible,a:focus-visible{outline:3px solid var(--violet);outline-offset:4px}main{max-width:1160px;margin:32px auto;padding:0 24px}.visual{position:relative;background:var(--paper);padding:36px 42px 24px;border:1px solid var(--line);border-radius:24px;box-shadow:0 16px 60px #25302508;overflow:hidden}.brand-row{display:flex;align-items:center;justify-content:space-between;gap:12px}.brand{font-size:22px;font-weight:750;letter-spacing:-.8px;display:flex;align-items:center;gap:8px}.brand svg{width:21px;height:26px}.eyebrow{font-size:11px;letter-spacing:1.7px;font-weight:600;color:var(--muted);text-transform:uppercase}h1{font-size:clamp(32px,5.2vw,60px);font-weight:680;letter-spacing:-2.5px;line-height:1.12;margin:29px 0 10px;text-align:center}h1 span{color:var(--green);white-space:nowrap}.intro{font-size:20px;text-align:center;color:var(--muted);margin:0 0 25px}.diff{max-width:660px;margin:auto;border:1px solid #d8ded3;border-radius:13px;background:white;box-shadow:0 3px 0 #e6eae155;overflow:hidden}.diff-header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid #edf0e9;gap:10px;font-size:12px;color:var(--muted)}.diff-label{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:650;letter-spacing:.5px}.diff-label svg{width:14px;height:14px}code{font:14px ui-monospace,"SFMono-Regular",Consolas,monospace}.diff-body{display:grid;grid-template-columns:1fr 1fr;padding:12px 14px;gap:8px}.code-line{padding:7px 9px;border-radius:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.removed{background:#f9ede7;color:#a3664e}.added{background:#e9f4e5;color:#266448}.fork{display:block;width:100%;height:32px;overflow:visible}.lanes{display:grid;grid-template-columns:1fr 1fr;gap:24px}.lane{border:1px solid var(--line);border-radius:16px;background:white;padding:23px 24px 18px;min-width:0}.lane.smart{border-color:#c7d9c7;background:linear-gradient(145deg,#fff 35%,#f6fbf2)}.lane-top{display:flex;justify-content:space-between;align-items:center;gap:8px}.lane h2{font-size:22px;letter-spacing:-.5px;margin:0;font-weight:650}.badge{font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;background:#edf0ea;border-radius:5px;padding:4px 6px;color:#6d776c}.smart .badge{background:var(--violet-soft);color:var(--violet)}.lane-caption{font-size:14px;color:var(--muted);margin:6px 0 18px;min-height:20px}.status-icon{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;background:var(--violet);vertical-align:1px}.tests{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.test{display:flex;align-items:center;gap:6px;border:1px solid #e3e7df;background:#f8f9f5;color:#788173;border-radius:7px;min-width:0;padding:10px 8px;font-size:12px;font-weight:500;line-height:1.1;position:relative;overflow:hidden}.test:before{content:"";width:6px;height:6px;border-radius:2px;background:#a8b0a1;flex-shrink:0}.test span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.baseline .test{background:#eef1e9;border-color:#dce2d4;color:#4e5e45}.baseline .test:before{background:#6e7c65}.smart .test[data-state=checking]{background:var(--violet-soft);border-color:#bca5f3;color:#6844bf;box-shadow:0 0 0 2px #bfa9ed22}.smart .test[data-state=checking]:before{background:var(--violet)}.smart .test[data-state=selected]{background:var(--green-soft);border-color:#b0d1a5;color:var(--green);font-weight:650}.smart .test[data-state=selected]:before{background:var(--green);box-shadow:0 0 0 3px #15674c0c}.smart .test[data-state=omitted]{background:#fcfdf9;border-color:#ecefe7;color:#98a08e}.smart .test[data-state=omitted]:before{background:#d9dfd1}.stats{border-top:1px solid #e7ebe2;margin-top:21px;padding-top:15px;display:flex;align-items:baseline;gap:9px}.count{font-size:47px;font-weight:650;letter-spacing:-2px;line-height:1.05;min-width:35px}.stats .unit{font-size:15px;color:var(--muted)}.smart .count{color:var(--green)}.stats .side-note{margin-left:auto;font-size:12px;color:var(--muted)}.result{display:flex;align-items:center;justify-content:center;gap:8px;margin:20px 0 0;min-height:28px;font-size:18px;color:var(--green);font-weight:550;letter-spacing:-.2px}.result svg{width:18px;height:18px;flex-shrink:0}.disclaimer{font-size:10px;color:#8a9386;text-align:center;letter-spacing:.1px;margin:10px 0 0}.controls{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 4px 0}.scenarios{display:flex;gap:4px;align-items:center;flex-wrap:wrap}.control-label{font-size:12px;color:var(--muted);margin-right:7px}.scenario,.action{border:1px solid transparent;background:transparent;color:var(--muted);padding:8px 13px;border-radius:8px;font-size:13px;min-height:37px}.scenario:hover,.action:hover{background:#e3e8df}.scenario[aria-pressed=true]{background:white;border-color:#d5ddce;color:var(--ink);box-shadow:0 2px 5px #1b282407}.actions{display:flex;gap:4px;align-items:center}.action{display:flex;align-items:center;gap:6px;padding:8px 10px}.action svg{width:15px;height:15px}.hint{text-align:center;color:#89907f;font-size:11px;margin:14px 0 0}.sr{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}.capture body{background:var(--paper)}.capture main{max-width:1160px;margin:0 auto;padding:0}.capture .visual{border:0;border-radius:0;box-shadow:none}.capture .controls,.capture .hint{display:none}
+@media(max-width:760px){main{padding:0 12px;margin:12px auto}.visual{padding:24px 20px 20px;border-radius:17px}h1{font-size:39px;letter-spacing:-1.8px;margin-top:24px}.intro{font-size:16px;margin-bottom:20px}.lane{padding:18px 14px 14px}.lanes{gap:12px}.lane h2{font-size:19px}.lane-caption{font-size:12px;min-height:34px;margin-bottom:10px}.badge{font-size:8px}.tests{gap:7px;grid-template-columns:repeat(2,minmax(0,1fr))}.test{font-size:11px;padding:9px 7px}.count{font-size:40px}.stats{gap:7px;flex-wrap:wrap}.stats .unit{font-size:12px}.stats .side-note{display:none}.result{font-size:16px}.controls{gap:8px;flex-wrap:wrap}.diff-body{padding:9px;gap:6px}code{font-size:12px}.eyebrow{font-size:9px;letter-spacing:1px}}
+@media(max-width:450px){.visual{padding:19px 13px 17px}h1{font-size:31px;letter-spacing:-1.25px}.intro{font-size:13px}.brand{font-size:19px}.brand svg{width:17px}.eyebrow{font-size:8px;letter-spacing:.7px}.diff-header{padding:8px 10px;font-size:10px}.diff-label{font-size:9px}.diff-body{grid-template-columns:1fr;gap:3px;padding:7px 9px}.code-line{padding:5px 7px}code{font-size:12px}.fork{height:24px}.lane{padding:14px 10px 12px}.lanes{gap:8px}.lane h2{font-size:17px}.badge{display:none}.lane-caption{font-size:11px}.test{font-size:9px;gap:4px;padding:8px 4px}.test:before{width:4px;height:4px}.tests{gap:6px}.stats{padding-top:10px;margin-top:14px;gap:5px}.count{font-size:34px}.stats .unit{font-size:11px}.result{font-size:14px;margin-top:17px;gap:5px}.result svg{width:15px}.disclaimer{font-size:9px}.control-label{display:none}.scenario,.action{padding:7px 10px;font-size:12px}.actions{margin-left:auto}.hint{font-size:10px}}
+</style>
+</head>
+<body>
+<main>
+  <section class="visual" aria-labelledby="title">
+    <div class="brand-row">
+      <div class="brand"><svg aria-hidden="true" viewBox="0 0 24 30" fill="currentColor"><path d="M9 0h12l-7 12h10L5 30l5-14H0z"/></svg>faultline</div>
+      <div class="eyebrow">Test impact analysis, powered by Jev</div>
+    </div>
+    <h1 id="title">Same change. <span>Fewer tests.</span></h1>
+    <p class="intro">Jev checks your diff against your tests.</p>
+    <div class="diff" aria-label="Fictional code change">
+      <div class="diff-header"><span class="diff-label"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 3v7a3 3 0 0 0 6 0V7"/><circle cx="4" cy="3" r="2" fill="white"/><circle cx="10" cy="5" r="2" fill="white"/></svg>THE DIFF</span><span id="filename">shipping.ts</span></div>
+      <div class="diff-body"><code class="code-line removed" id="before">− freeShippingFrom = 50</code><code class="code-line added" id="after">+ freeShippingFrom = 75</code></div>
+    </div>
+    <svg class="fork" aria-hidden="true" viewBox="0 0 1000 32" preserveAspectRatio="none"><path d="M500 0v8q0 5-5 5H250q-5 0-5 5v13" fill="none" stroke="#cfd7c8" stroke-width="1.5"/><path d="M500 0v8q0 5 5 5h245q5 0 5 5v13" fill="none" stroke="#b59bdc" stroke-width="1.5"/><path d="m241 26 4 5 4-5" fill="none" stroke="#c0cbb7" stroke-width="1.5"/><path d="m751 26 4 5 4-5" fill="none" stroke="#b59bdc" stroke-width="1.5"/><circle id="packet" cx="500" cy="0" r="3" fill="#7552d9"/></svg>
+    <div class="lanes">
+      <section class="lane baseline" aria-label="Typical CI runs every test">
+        <div class="lane-top"><h2>Typical CI</h2><span class="badge">Run everything</span></div>
+        <p class="lane-caption">Every change runs the full suite.</p>
+        <ul class="tests" id="all-tests" aria-label="All twelve test files"></ul>
+        <div class="stats"><span class="count">12</span><span class="unit">tests to run</span><span class="side-note">Full suite</span></div>
+      </section>
+      <section class="lane smart" aria-label="Faultline proposes the relevant tests">
+        <div class="lane-top"><h2>With Faultline</h2><span class="badge">Jev</span></div>
+        <p class="lane-caption"><span class="status-icon" id="status-dot" aria-hidden="true"></span><span id="status">Jev checks all 12 tests…</span></p>
+        <ul class="tests" id="smart-tests" aria-label="Proposed test selection"></ul>
+        <div class="stats"><span class="count" id="selected-count">…</span><span class="unit">tests to run</span><span class="side-note" id="omit-count">Checking relevance</span></div>
+      </section>
+    </div>
+    <p class="result"><svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m4 10 4 4 8-9"/></svg><span id="result">One diff. Every test considered.</span></p>
+    <p class="disclaimer">Fictional example · Proposed test files, not test results · No tests executed</p>
+    <p class="sr" id="announcement" aria-live="polite"></p>
+  </section>
+  <div class="controls" aria-label="Demo controls">
+    <div class="scenarios" role="group" aria-label="Try a different code change"><span class="control-label">Try a diff</span><button class="scenario" data-scenario="shipping" aria-pressed="true" type="button">Shipping</button><button class="scenario" data-scenario="login" aria-pressed="false" type="button">Sign-in</button><button class="scenario" data-scenario="search" aria-pressed="false" type="button">Search</button></div>
+    <div class="actions"><button class="action" id="replay" type="button"><svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7a7 7 0 1 1 0 6M4 2v5h5"/></svg>Replay</button><button class="action" id="toggle" type="button">Pause</button></div>
+  </div>
+  <p class="hint">Switch the diff to see the selection change. Mocked judgments. No API calls.</p>
+</main>
+<script>
+'use strict';
+(()=>{
+  const $=id=>document.getElementById(id);
+  const names=['Shipping','Delivery','Checkout','Sign-in','Reset','Profile','Search','Filters','Wishlist','Invoices','Reports','Uploads'];
+  const scenarios={
+    shipping:{file:'shipping.ts',before:'freeShippingFrom = 50',after:'freeShippingFrom = 75',selected:[0,1,2],reason:'Shipping + checkout. The rest can wait.'},
+    login:{file:'auth.ts',before:'tokenMinutes = 60',after:'tokenMinutes = 15',selected:[3,4],reason:'Sign-in + password reset. The rest can wait.'},
+    search:{file:'search.ts',before:'ignoreCase = false',after:'ignoreCase = true',selected:[6,7],reason:'Search + filters. The rest can wait.'}
+  };
+  const duration=8,params=new URLSearchParams(location.search),reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const loop=params.get('loop')==='1',validScenario=s=>Object.hasOwn(scenarios,s);
+  let scenario=validScenario(params.get('change'))?params.get('change'):'shipping',time=0,playing=false,last=null,raf=0,announced=false;
+  const smart=[];
+  for(const name of names){
+    for(const [id,isSmart] of [['all-tests',false],['smart-tests',true]]){
+      const li=document.createElement('li');li.className='test';
+      const span=document.createElement('span');span.textContent=name;li.append(span);
+      li.title=name;$(id).append(li);if(isSmart)smart.push(li);else li.setAttribute('aria-label',name+': run');
+    }
+  }
+  function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+  function render(){
+    const data=scenarios[scenario],done=time>=3.6;
+    const scanned=clamp(Math.floor((time-.65)/.235),-1,11);
+    smart.forEach((tile,i)=>{
+      const state=done?(data.selected.includes(i)?'selected':'omitted'):i<scanned?'reviewed':i===scanned?'checking':'pending';
+      tile.dataset.state=state;
+      tile.style.opacity=state==='pending'?'.7':'1';
+      tile.setAttribute('aria-label',names[i]+': '+(state==='selected'?'proposed to run':state==='omitted'?'proposed to omit':state==='checking'?'Jev is assessing relevance':'awaiting selection'));
+    });
+    $('status').textContent=done?'Jev found the relevant tests':time<.65?'Diff + tests → Jev':'Jev checks all 12 tests…';
+    $('status-dot').style.background=done?'var(--green)':'var(--violet)';
+    $('status-dot').style.opacity=done?'1':String(.55+Math.sin(time*5)*.35);
+    $('selected-count').textContent=done?String(data.selected.length):'…';
+    $('omit-count').textContent=done?(12-data.selected.length)+' omitted':'Checking relevance';
+    $('result').textContent=done?(12-data.selected.length)+' fewer test files in this example.':'One diff. Every test considered.';
+    const p=clamp(time/.65,0,1),x=p<.3?500:500+(p-.3)/.7*255,y=p<.3?p/.3*13:p<.92?13:13+(p-.92)/.08*18;
+    $('packet').setAttribute('cx',x);$('packet').setAttribute('cy',y);$('packet').style.opacity=time<.65?'1':'0';
+    if(done&&!announced){$('announcement').textContent=`${data.file}: Jev assessed all 12 fictional test files. Faultline proposes ${data.selected.length} to run and ${12-data.selected.length} to omit. ${data.reason}`;announced=true}
+    if(!done)announced=false;
+  }
+  function pause(){playing=false;cancelAnimationFrame(raf);last=null;$('toggle').textContent='Play'}
+  function play(){if(playing)return;if(time>=duration)time=0;playing=true;last=null;$('toggle').textContent='Pause';raf=requestAnimationFrame(tick)}
+  function tick(stamp){if(!playing)return;if(last!==null)time=Math.min(duration,time+(stamp-last)/1000);last=stamp;render();if(time>=duration){if(loop&&!reduced){time=0;last=null;raf=requestAnimationFrame(tick)}else pause()}else raf=requestAnimationFrame(tick)}
+  function seek(value){pause();time=clamp(Number(value)||0,0,duration);render()}
+  function setScenario(value,animate=true){if(!validScenario(value))return;pause();scenario=value;const data=scenarios[value];$('filename').textContent=data.file;$('before').textContent='− '+data.before;$('after').textContent='+ '+data.after;document.querySelectorAll('[data-scenario]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.scenario===value)));time=animate&&!reduced?0:duration;announced=false;render();if(animate&&!reduced)play()}
+  document.querySelectorAll('[data-scenario]').forEach(b=>b.addEventListener('click',()=>setScenario(b.dataset.scenario)));
+  $('replay').addEventListener('click',()=>{seek(0);play()});$('toggle').addEventListener('click',()=>playing?pause():play());
+  document.addEventListener('keydown',e=>{if(e.code==='Space'&&!['BUTTON','INPUT','SELECT'].includes(e.target.tagName)){e.preventDefault();playing?pause():play()}});
+  if(params.get('capture')==='1')document.documentElement.classList.add('capture');
+  setScenario(scenario,params.get('autoplay')!=='0');
+  window.faultlineDemo=Object.freeze({seek,play,pause,setScenario,duration,state:()=>({time,playing,scenario,total:12,selected:[...scenarios[scenario].selected],run:scenarios[scenario].selected.length,omit:12-scenarios[scenario].selected.length,done:time>=3.6})});
+})();
+</script>
+</body>
+</html>

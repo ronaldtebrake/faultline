@@ -1,66 +1,61 @@
 """Report-only shadow analysis, optional native evidence, and explicit execution commands."""
 from pathlib import Path
 
-from ..core import FaultlineError
-from . import catalog
+from ..core import FaultlineError, read_json
 from .common import revision, save_frozen
 from .config import load_config
 from .mapping import phpunit_xml
 
 
-COMMANDS = {'discover', 'catalog', 'mapping', 'graph', 'select', 'run', 'record', 'shadow-report', 'execution-report', 'benchmark', 'benchmark-report', 'cache'}
-
-
 def add_commands(commands):
+    context = commands.add_parser('context', help='Verify and freeze agent-selected source context; no network or test execution')
+    context.add_argument('--base', required=True)
+    context.add_argument('--head', default='HEAD')
+    context.add_argument('--input', type=Path, required=True, help='Version 1 context manifest')
+    context.add_argument('--output', type=Path)
     cache = commands.add_parser('cache', help='Maintain local Jev answer storage')
     cache.add_argument('cache_action', choices=['compact'], help='Migrate verified legacy JSON answers to SQLite and remove their old cache files')
-    graph = commands.add_parser('graph', help='Build or inspect immutable CodeGraph revision artifacts')
-    actions = graph.add_subparsers(dest='graph_action', required=True)
-    build = actions.add_parser('build', help='Index an exact Git revision; reuse a compatible artifact incrementally')
-    build.add_argument('--fresh', action='store_true', help='Build without incremental reuse; publish a separate reference artifact')
-    build.add_argument('--revision', default='HEAD')
-    build.add_argument('--reuse', type=Path)
-    build.add_argument('--output', type=Path)
-    for action in ('import', 'export'):
-        transfer = actions.add_parser(action, help='Copy a trusted immutable graph baseline between checkouts/artifact storage')
-        transfer.add_argument('artifact', type=Path)
-        if action == 'export':
-            transfer.add_argument('--output', type=Path, required=True)
-    inspect = actions.add_parser('inspect')
-    inspect.add_argument('artifact', type=Path)
-    select = commands.add_parser('select', help='Save a CodeGraph + Jev would-run report without executing tests')
-    select.add_argument('--graph-only', action='store_true', help='Report the CodeGraph-only baseline; no Jev calls or credentials needed')
+    select = commands.add_parser('select', help='Save a Jev would-run report without executing tests')
     select.add_argument('--base', required=True, help='Actual PR/MR diff base; use a merge-base if required by your host')
     select.add_argument('--head', default='HEAD')
     select.add_argument('--id', help='PR/MR identifier for reports, excluded from inference inputs')
-    select.add_argument('--baseline', type=Path, help='Optional reusable graph artifact; never changes the actual PR diff base')
-    select.add_argument('--base-graph', type=Path)
-    select.add_argument('--head-graph', type=Path)
-    select.add_argument('--no-build', action='store_true', help='Use restored artifacts only; missing indexes use an explicit Git source fallback')
     select.add_argument('--max-requests', type=int, help='Per-invocation Jev request cap including retries; does not edit configuration')
     select.add_argument('--selection-seconds', type=float, help='Per-invocation inference time limit')
-    select.add_argument('--prepare', action='store_true', help='Build/reuse graphs and estimate Jev work without contacting Jev')
+    select.add_argument('--prepare', action='store_true', help='Read exact Git sources and estimate Jev work without contacting Jev')
     select.add_argument('--dry-run', action='store_true', help='Inspect cached evidence and request estimates; no indexing or API calls')
     select.add_argument('--native', action='store_true', help='Opt into runner discovery in a prepared application environment')
     select.add_argument('--output', type=Path)
-    benchmark = commands.add_parser('benchmark', help='Freeze CodeGraph, Jev, and graph-enriched Jev proposals without running tests')
-    benchmark.add_argument('--evidence-mode', choices=['whole', 'file-pairs'], default='whole', help='Whole-input reference, or explicit bounded changed-file comparisons without setup bodies')
+    benchmark = commands.add_parser('benchmark', help='Freeze Jev proposals without running tests')
+    benchmark.add_argument('--evidence-mode', choices=['adaptive', 'source', 'whole', 'file-pairs'], default='adaptive', help='Whole inputs with explicit lossless window fallback (default), strict source reference, full setup, or changed-file windows')
     benchmark.add_argument('--base', required=True)
     benchmark.add_argument('--head', default='HEAD')
     benchmark.add_argument('--id')
     benchmark.add_argument('--title', default='', help='Optional outcome-blind PR/MR title')
     benchmark.add_argument('--description', default='', help='Optional outcome-blind PR/MR description')
-    benchmark.add_argument('--base-graph', type=Path)
-    benchmark.add_argument('--head-graph', type=Path)
-    benchmark.add_argument('--no-build', action='store_true')
-    benchmark.add_argument('--prepare', action='store_true', help='Prepare exact graphs and estimate both Jev arms without calling the API')
-    benchmark.add_argument('--max-requests', type=int, help='Total HTTP attempts across both Jev arms, including retries')
-    benchmark.add_argument('--selection-seconds', type=float, help='Shared inference deadline for both Jev arms')
+    benchmark.add_argument('--context', type=Path, help='Frozen context bundle matching this exact change; omit for diff-only baseline')
+    benchmark.add_argument('--prepare', action='store_true', help='Read exact sources and estimate Jev requests without calling the API')
+    benchmark.add_argument('--max-requests', type=int, help='Total HTTP attempts including retries')
+    benchmark.add_argument('--selection-seconds', type=float, help='Shared inference deadline for all judgments')
+    benchmark.add_argument('--max-state-bytes', type=int, help='Local byte guard for shared state plus longest question; not an exact token count')
+    benchmark.add_argument('--max-batch-bytes', type=int, help='Local byte guard for the complete request')
     benchmark.add_argument('--output', type=Path)
+    recovery = commands.add_parser('benchmark-recover', help='Reassess only unresolved source targets; preserve accepted judgments and freeze a new case')
+    recovery.add_argument('--benchmark', type=Path, required=True)
+    recovery.add_argument('--prepare', action='store_true', help='Plan bounded evidence windows and cached work without API calls')
+    recovery.add_argument('--max-requests', type=int, help='Total new HTTP attempts including retries')
+    recovery.add_argument('--selection-seconds', type=float)
+    recovery.add_argument('--output', type=Path)
     assessment = commands.add_parser('benchmark-report', help='Regenerate a benchmark report or assess exact imported CI outcomes offline')
     assessment.add_argument('--benchmark', type=Path, required=True)
     assessment.add_argument('--outcomes', type=Path)
-    assessment.add_argument('--output', type=Path, help='Fresh assessment JSON destination; requires --outcomes')
+    assessment.add_argument('--policy-comparison', type=Path, help='Previously frozen .policies.json to assess against --outcomes')
+    assessment.add_argument('--output', type=Path, help='Report basename for Markdown/CSV, or fresh assessment JSON when importing outcomes')
+    assessment.add_argument('--pricing', type=Path, help='Dated input-token pricing JSON for offline report estimates; does not change frozen evidence')
+    assessment.add_argument('--format', choices=['full', 'comment'], default='full', help='Detailed Markdown/CSV or a compact PR comment preview; never posts a comment')
+    assessment.add_argument('--compare-policies', action='store_true', help='Compare saved decisions with offline relevance thresholds and file budgets; no inference or execution changes')
+    assessment.add_argument('--relevance-thresholds', nargs='+', type=float, help='Exploratory P(plausible+strong+direct) thresholds; default: 0.10 0.25 0.50')
+    assessment.add_argument('--file-budgets', nargs='+', type=int, help='Exploratory source-file budgets; default: 10%%, 25%%, 50%% of inventory rounded up')
+    assessment.add_argument('--report-url', help='HTTPS link to a published report or CI artifact, for --format comment')
     run = commands.add_parser('run', help='Preview a frozen proposal; --execute opts into full-suite execution')
     run.add_argument('--execute', action='store_true', help='Explicitly validate and execute the full suite instead of reporting only')
     run.add_argument('--selection', type=Path, required=True)
@@ -77,19 +72,10 @@ def add_commands(commands):
     shadow = commands.add_parser('shadow-report', help='Show saved would-run proposals without running tests')
     shadow.add_argument('--selection', type=Path, help='Regenerate one proposal; omit to aggregate saved PR/MR snapshots')
     commands.add_parser('execution-report', help='Aggregate outcomes from explicitly executed full-suite evaluations')
-    discovery = commands.add_parser('discover', help='Query test targets from the current graph index without invoking runners')
+    discovery = commands.add_parser('discover', help='Query test targets from the exact Git revision without invoking runners')
     discovery.add_argument('--revision', default='HEAD')
     discovery.add_argument('--output', type=Path)
     discovery.add_argument('--native', action='store_true', help='Enrich source targets with native runner identities')
-    shared = commands.add_parser('catalog', help='Legacy description maintenance; not used by graph indexing or select')
-    actions = shared.add_subparsers(dest='catalog_action', required=True)
-    actions.add_parser('check', help='Check reviewed descriptions against current sources and inventory')
-    actions.add_parser('show', help='Show provisional source identities, descriptions, and freshness')
-    sync = actions.add_parser('sync', help='Draft new/changed descriptions and remove absent units')
-    sync.add_argument('--legacy', type=Path, help='Migrate descriptions from a local index.jsonl; review is required')
-    review = actions.add_parser('import', help='Import reviewed descriptions for discovered units')
-    review.add_argument('--input', type=Path, required=True)
-    review.add_argument('--reviewer', required=True)
     mapping = commands.add_parser('mapping', help='Import relationships produced by existing coverage tools')
     imports = mapping.add_subparsers(dest='mapping_action', required=True)
     phpunit = imports.add_parser('import-phpunit', help='Import test-attributed PHPUnit XML coverage, not Clover/JUnit')
@@ -104,7 +90,7 @@ def add_commands(commands):
 def dispatch(store, args):
     # With --root, relative data paths belong to the analyzed checkout, including
     # when an installed skill is launched from an IDE's unrelated directory.
-    for name in ('output', 'input', 'artifact', 'reuse', 'base_graph', 'head_graph', 'selection', 'run', 'junit_output', 'legacy', 'baseline', 'benchmark', 'outcomes'):
+    for name in ('output', 'input', 'selection', 'run', 'junit_output', 'benchmark', 'outcomes', 'pricing', 'policy_comparison', 'context'):
         value = getattr(args, name, None)
         if value is not None:
             setattr(args, name, (store.root / value).resolve())
@@ -113,31 +99,31 @@ def dispatch(store, args):
     if args.command == 'cache':
         from .cache import AnswerCache
         return AnswerCache(store).compact()
-    if args.command == 'graph':
-        from . import graph
-        if args.graph_action == 'inspect':
-            path, value = graph.load(args.artifact)
-            return {'path': str(path), **value}
-        if args.graph_action in ('import', 'export'):
-            return graph.transfer(store, load_config(store.root), args.artifact, output=getattr(args, 'output', None))
-        return graph.build(store, load_config(store.root), args.revision, reuse=args.reuse, output=args.output, fresh=args.fresh)
+    if args.command == 'context':
+        from .context import build
+        return build(store, args.base, args.head, args.input, args.output)
     if args.command == 'benchmark':
         from .benchmark import benchmark
-        return benchmark(store, args.base, args.head, identifier=args.id, base_graph=args.base_graph, head_graph=args.head_graph,
-                         build_graphs=not args.no_build, prepare=args.prepare, output=args.output,
-                         max_requests=args.max_requests, selection_seconds=args.selection_seconds, title=args.title, description=args.description, evidence_mode=args.evidence_mode)
+        return benchmark(store, args.base, args.head, identifier=args.id, prepare=args.prepare, output=args.output,
+                         max_requests=args.max_requests, selection_seconds=args.selection_seconds, title=args.title, description=args.description, evidence_mode=args.evidence_mode, max_state_bytes=args.max_state_bytes, max_batch_bytes=args.max_batch_bytes, context_path=args.context)
+    if args.command == 'benchmark-recover':
+        from .benchmark_recovery import recover
+        return recover(store, args.benchmark, prepare=args.prepare, max_requests=args.max_requests,
+                       selection_seconds=args.selection_seconds, output=args.output)
     if args.command == 'benchmark-report':
         if args.outcomes:
+            if args.pricing or args.format != 'full' or args.report_url or args.compare_policies or args.relevance_thresholds is not None or args.file_budgets is not None:
+                raise FaultlineError('Pricing, comment format and policy comparisons apply to routing reports; omit --outcomes')
             from .benchmark_results import assess
-            return assess(store, args.benchmark, args.outcomes, args.output)
-        if args.output:
-            raise FaultlineError('--output requires --outcomes')
+            return assess(store, args.benchmark, args.outcomes, args.output, policy_comparison=args.policy_comparison)
+        if args.policy_comparison:
+            raise FaultlineError('--policy-comparison requires --outcomes')
         from .benchmark import render
-        return render(args.benchmark)
+        return render(args.benchmark, pricing=read_json(args.pricing) if args.pricing else None, output=args.output, format=args.format, report_url=args.report_url, compare_policies=args.compare_policies, relevance_thresholds=args.relevance_thresholds, file_budgets=args.file_budgets)
     if args.command == 'select':
         from .selection import select
         return select(store, args.base, args.head, identifier=args.id, output=args.output, dry_run=args.dry_run,
-                      base_graph=args.base_graph, head_graph=args.head_graph, build_graphs=not args.no_build, native=args.native, baseline=args.baseline, max_requests=args.max_requests, selection_seconds=args.selection_seconds, prepare=args.prepare, graph_only=args.graph_only)
+                      native=args.native, max_requests=args.max_requests, selection_seconds=args.selection_seconds, prepare=args.prepare)
     if args.command == 'run':
         from .execution import run_suite
         return run_suite(store, args.selection, args.suite, prerequisites=args.prerequisite, output=args.output, junit_output=args.junit_output, execute=args.execute)
@@ -162,26 +148,16 @@ def dispatch(store, args):
                 'relationships': len(document['edges']), 'limitations': document['limitations']}
     config = load_config(store.root)
     if args.command == 'discover':
-        from . import graph
-        from .graph_index import open_index, enrich
+        from .source_index import open_index
         rev = revision(store.root, args.revision)
         source, inventory, provenance = open_index(store, config, rev)
         if args.native:
             from .selection import workspace
             if revision(store.root) != rev or not workspace(store.root)['clean']:
                 raise FaultlineError('Native enrichment requires a clean checkout of the requested revision')
-            inventory = enrich(store.root, config, inventory)
+            inventory = open_index(store, config, rev, native=True)[1]
         store.initialize()
         output = args.output or store.path / 'inventories' / (inventory['integrity'] + '.json')
         save_frozen(output, inventory)
         return {'output': str(output.resolve()), **inventory, 'index': provenance}
-    inventory = catalog.source_inventory(store.root, config)
-    if args.catalog_action == 'check':
-        return {**catalog.check(store.root, inventory), 'discovery': inventory['suites']}
-    if args.catalog_action == 'show':
-        return {'complete': inventory['complete'], 'suites': inventory['suites'],
-                'records': [catalog.load_record(store.root, u) for s in inventory['suites'] for u in s['units']],
-                'freshness': catalog.check(store.root, inventory)['units']}
-    if args.catalog_action == 'sync':
-        return catalog.sync(store.root, inventory, legacy=args.legacy)
-    return catalog.import_records(store.root, inventory, args.input, args.reviewer)
+    raise FaultlineError(f'Unknown command: {args.command}')
