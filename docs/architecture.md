@@ -5,7 +5,7 @@ Faultline has one Python engine, distributed as a CLI and inside an agent skill.
 ```mermaid
 flowchart TD
     GIT["Git: base, tested head, test source"] --> ENGINE["Faultline: prepare inputs"]
-    AGENT["Coding agent: investigate the change"] --> CONTEXT["Verified source context"]
+    AGENT["Coding agent: inspect missing implementation"] --> CONTEXT["Verified source context"]
     CONTEXT --> ENGINE
     ENGINE --> JEV["Jev: score change–test relevance"]
     JEV --> POLICY["Faultline: policy, required tests, fallbacks"]
@@ -18,11 +18,13 @@ flowchart TD
 
 | Component | Job |
 | --- | --- |
-| Coding agent | Configure test paths, resolve PR revisions, gather relevant product and dependency source, explain results. |
+| Coding agent | Configure test paths, resolve PR revisions, collect focused evidence when implementation is missing, explain results. |
 | Git | Supply exact source at base/head without switching branches. |
 | Faultline engine | Verify inputs, discover configured files, batch requests, validate answers, apply policies, save evidence and reports. |
 | Jev | Return a five-level relevance distribution for each supplied change–test relationship. |
 | Existing CI | Run tests and supply outcomes. Faultline does not schedule containers, services, or jobs. |
+
+Start with the diff; ordinary source changes need no automatic context expansion. Collect external patch or dependency changes when their implementation is absent, with small integration excerpts only where needed. Prepare the combined inputs before spending; larger context can multiply requests.
 
 The CLI does not automatically investigate callers or fetch dependency releases. An agent supplies that evidence through a pinned context bundle. Without a bundle, the benchmark uses the diff and test source alone. Both paths keep every configured test eligible.
 

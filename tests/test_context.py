@@ -24,12 +24,12 @@ class ContextTests(unittest.TestCase):
     commit = fixture.BenchmarkTests.commit
     engine = fixture.BenchmarkTests.engine
 
-    def bundle(self, **extra):
+    def bundle(self, *, compact=False, **extra):
         manifest = {'schema_version': 1, 'evidence': [
             {'kind': 'git_file', 'path': 'src/Service.php', 'revision': 'head'}], **extra}
         path = self.store.path / 'context-manifest.json'
         write_json(path, manifest)
-        return build(self.store, self.base, self.head, path)
+        return build(self.store, self.base, self.head, path, compact=compact)
 
     def score(self, context_path=None, **kw):
         engine, calls = self.engine()
@@ -59,6 +59,70 @@ class ContextTests(unittest.TestCase):
         self.assertIn('Combined collection and Jev cost: unknown', report)
         _, cached, _ = self.score()
         self.assertEqual([], cached)
+
+    def test_compact_preserves_exact_evidence_and_local_audit(self):
+        full = checked(Path(self.bundle()['output']))
+        compact = checked(Path(self.bundle(compact=True)['output']))
+        self.assertEqual(full['evidence'], compact['evidence'])
+        delta = change(self.root, self.base, self.head, None)
+        standard = assessment_context(delta, full)
+        small = assessment_context(delta, compact)
+        self.assertLess(len(json.dumps(small)), len(json.dumps(standard)))
+        for item, block in zip([{'text': delta['diff']}, *compact['evidence']], small['context_evidence']['blocks']):
+            self.assertEqual(item['text'], small['diff'][block['start_char']:block['end_char']])
+        self.assertNotIn('file_sha256', json.dumps(small))
+        self.assertIn('file_sha256', json.dumps(compact))
+        first, _, _ = self.score(self.bundle()['output'])
+        second, calls, _ = self.score(self.bundle(compact=True)['output'])
+        self.assertTrue(calls)
+        self.assertNotEqual(first['request_manifest'], second['request_manifest'])
+        _, calls, _ = self.score(self.bundle(compact=True)['output'])
+        self.assertEqual([], calls)
+
+    def test_compact_windows_retain_only_intersecting_labels_and_all_source(self):
+        from faultline.tia.common import seal
+        artifact = self.store.path / 'large.txt'
+        artifact.write_text('function integration() { /* complete source */ }\n' * 260)
+        specs = [{'kind': 'artifact', 'file': str(artifact), 'source': f'https://example.org/source/{i}', 'sha256': sha(artifact.read_bytes())} for i in range(3)]
+        bundle = checked(Path(self.bundle(compact=True, evidence=specs)['output']))
+        plain, _, _ = self.score()
+        context = assessment_context(plain['change'], bundle)
+        config = {**self.config['evaluator'], 'max_state_bytes': 6000, 'max_batch_bytes': 14000}
+        ids = {p['id'] for p in plain['inputs']}
+        plan = RecoveryPlan(context, plain['inputs'], {'jev': ids}, config)
+        self.assertFalse(plan.rejected['jev'])
+        for parts in plan.parts['jev'].values():
+            covered = set()
+            for part in parts:
+                covered.update(range(*part['change_range']))
+            self.assertEqual(set(range(len(context['diff']))), covered)
+        smaller = False
+        for group in plan.groups:
+            data = group['jev']['state']['change']
+            span = data['diff_evidence']
+            expected = [b for b in context['context_evidence']['blocks'] if b['block_start_char'] < span['end_char'] and b['end_char'] > span['start_char']]
+            self.assertEqual(expected, data['context_evidence']['blocks'])
+            self.assertEqual(context['diff'][span['start_char']:span['end_char']], data['diff'])
+            smaller |= len(expected) < len(context['context_evidence']['blocks'])
+        self.assertTrue(smaller)
+        bundle['presentation'] = 'unknown'
+        write_json(self.store.path / 'bad.json', seal(bundle))
+        with self.assertRaisesRegex(FaultlineError, 'presentation'):
+            self.score(self.store.path / 'bad.json')
+
+    def test_compact_frozen_recovery_needs_no_original_sources(self):
+        output = self.bundle(compact=True)['output']
+        engine, _ = self.engine(limit=0)
+        result = benchmark(self.store, self.base, self.head, evaluator=engine, context_path=output)
+        case = checked(Path(result['json']))
+        shutil.rmtree(self.root / '.git')
+        Path(output).unlink()
+        engine, calls = self.engine()
+        with patch('subprocess.run', side_effect=AssertionError('Recovery must be frozen')):
+            recovered = recover(self.store, result['json'], evaluator=engine)
+        self.assertTrue(recovered['complete'])
+        self.assertTrue(all(req['state']['change']['context_evidence']['contract'] == 'compact-context-v1' for req in calls))
+        self.assertEqual(case['context_bundle'], checked(Path(recovered['json']))['context_bundle'])
 
     def test_pinning_ranges_artifacts_and_upstream_diffs(self):
         artifact = self.store.path / 'release.txt'
@@ -167,7 +231,7 @@ class ContextTests(unittest.TestCase):
         (self.store.path / '.gitignore').unlink()
         write_json(path, {'schema_version': 1, 'evidence': [{'kind': 'git_file', 'path': 'src/Service.php'}]})
         with patch('builtins.print'), patch('faultline.tia.runners.invoke', side_effect=AssertionError('No runner')):
-            self.assertEqual(0, main(['--root', str(self.root), 'context', '--base', self.base, '--input', str(path), '--output', str(output)]))
+            self.assertEqual(0, main(['--root', str(self.root), 'context', '--base', self.base, '--input', str(path), '--output', str(output), '--compact']))
             self.assertEqual(0, main(['--root', str(self.root), 'benchmark', '--base', self.base, '--context', str(output), '--prepare']))
         self.assertTrue(output.is_file())
         self.assertEqual('*\n', (self.store.path / '.gitignore').read_text())

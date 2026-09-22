@@ -14,7 +14,7 @@ faultline benchmark --base <diff-base> --head <tested-head>   --id PR-123 --max-
 
 Preparation is offline. Inspect eligible targets, blockers, and estimated uncached requests before scoring. The example budget may not fit your suite. The live command saves JSON evidence, Markdown, and CSV under `.faultline/benchmarks/`; it never runs tests.
 
-For supporting product or dependency source, have your agent follow the [context reference](../skills/faultline/references/context.md), then add `--context <bundle.json>` to both commands. Without it, the inputs are the diff and test source.
+When the diff lacks changed implementation, have your agent follow the [context reference](../skills/faultline/references/context.md), then add `--context <bundle.json>` to both commands. Without it, the inputs are the diff and test source.
 
 ## Compare relevance thresholds
 
@@ -33,7 +33,7 @@ faultline benchmark-recover --benchmark <case.json> --prepare --max-requests 50
 faultline benchmark-recover --benchmark <case.json> --max-requests 50 --selection-seconds 120
 ```
 
-Use your remaining request budget, including earlier attempts and retries. Recovery preserves accepted judgments and writes a new case. It does not solve missing source or declared context gaps by spending more.
+Use your remaining request budget, including earlier attempts and retries. The CLI cap is per invocation; follow the [shared spending budget](../skills/faultline/references/benchmark.md#spending-budget) across invocations. Recovery preserves accepted judgments and writes a new case. It does not solve missing source or declared context gaps by spending more.
 
 ## Import outcomes
 

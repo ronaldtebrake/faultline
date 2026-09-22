@@ -12,6 +12,14 @@ npx skills add https://github.com/ronaldtebrake/faultline --skill faultline
 
 Choose your agent, then start a new session. If the repository is private, Git must be authenticated with an account that has access.
 
+For agents working on Jev inputs, scoring, or performance, also install the recommended [TypeSafe companion skill](https://github.com/typesafe-ai/skills):
+
+```bash
+npx skills add typesafe-ai/skills --skill typesafe-ai
+```
+
+Select the same agent and start a new session after installation. Faultline's instructions use this guidance when relevant. The CLI and CI do not require the companion skill.
+
 For terminal or CI use, install the standalone CLI:
 
 ```bash
@@ -61,7 +69,7 @@ TYPESAFE_API_KEY="your-key"
 
 ## 4. Benchmark a PR
 
-Ask your agent to gather context and benchmark the PR within your request budget. It can analyze an open or closed PR without switching your branch.
+Ask your agent to benchmark the PR from its diff, gather only missing implementation evidence, and stay within your spending budget. It can analyze an open or closed PR without switching your branch.
 
 For CLI use, follow [the commands guide](commands.md). You need the cumulative diff base and exact tested head locally. Prepare first, inspect the work estimate, then score. The CLI accepts an agent-prepared context bundle; without one, it scores the diff and test source alone.
 

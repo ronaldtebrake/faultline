@@ -13,6 +13,7 @@ from .config import load_config
 from .evidence import GitSources
 
 CONTRACT = 'change-context-v1'
+COMPACT = 'compact-context-v1'
 MAX_BYTES = 32 * 1024 * 1024
 INSTRUCTIONS = (
     ' The diff field is a labeled evidence stream: the original product diff followed by supporting source. '
@@ -50,7 +51,7 @@ def collector(value):
     return {key: value.get(key) for key in ('name', 'model', 'input_tokens', 'output_tokens', 'cost_usd')}
 
 
-def build(store, base, head, manifest_path, output=None):
+def build(store, base, head, manifest_path, output=None, *, compact=False):
     from .selection import change
     context = change(store.root, base, head, None)
     manifest = read_json(Path(manifest_path))
@@ -128,6 +129,7 @@ def build(store, base, head, manifest_path, output=None):
         evidence.append({**item, 'text': body, 'sha256': sha(body)})
     value = seal({'schema_version': 2, 'kind': 'context_bundle', 'contract': CONTRACT,
                   'created_at': now(), 'repository': load_config(store.root)['repository'],
+                  **({'presentation': COMPACT} if compact else {}),
                   'base': context['base'], 'head': context['head'], 'diff_sha256': sha(context['diff']),
                   'evidence': evidence, 'gaps': gaps, 'collector': collector(manifest.get('collector', {})),
                   'limitation': 'Verified source identity does not prove that context retrieval is exhaustive.'})
@@ -144,6 +146,7 @@ def validate(bundle, change, repository):
     require(all(isinstance(e, dict) and isinstance(e.get('text'), str) and e.get('sha256') == sha(e['text']) for e in bundle['evidence']), 'Context source digest mismatch')
     require(isinstance(bundle.get('gaps'), list) and all(isinstance(g, str) and g.strip() for g in bundle['gaps']), 'Invalid context gaps')
     collector(bundle.get('collector', {}))
+    require(bundle.get('presentation', 'full') in ('full', COMPACT), 'Unknown context presentation')
     return bundle
 
 
@@ -154,7 +157,7 @@ def load(path, change, repository):
 def summary(bundle):
     if bundle is None:
         return {'mode': 'diff_only', 'evidence_items': 0, 'evidence_bytes': 0, 'gaps': [], 'collector': None}
-    return {'mode': 'enriched', 'integrity': bundle['integrity'], 'evidence_items': len(bundle['evidence']),
+    return {'mode': 'enriched', 'presentation': bundle.get('presentation', 'full'), 'integrity': bundle['integrity'], 'evidence_items': len(bundle['evidence']),
             'evidence_bytes': sum(len(e['text'].encode()) for e in bundle['evidence']),
             'gaps': bundle['gaps'], 'collector': bundle['collector']}
 
@@ -164,6 +167,8 @@ def assessment_context(change, bundle):
         return change
     # Preserve line boundaries for the existing lossless adaptive window planner.
     # The separate block index survives slicing so an excerpt always has provenance.
+    if bundle.get('presentation') == COMPACT:
+        return compact_context(change, bundle)
     stream, blocks = '', []
     for item in [{'kind': 'product_diff', 'base': change['base'], 'head': change['head'], 'text': change['diff']}, *bundle['evidence']]:
         metadata = {k: v for k, v in item.items() if k != 'text'}
@@ -174,9 +179,34 @@ def assessment_context(change, bundle):
     return {**change, 'diff': stream, 'context_evidence': {'contract': CONTRACT, 'blocks': blocks, 'gaps': bundle['gaps']}}
 
 
+def compact_context(change, bundle):
+    """Keep exact source; send provenance once, without audit-only digests."""
+    stream, blocks = '', []
+    items = [{'kind': 'product_diff', 'base': change['base'], 'head': change['head'], 'text': change['diff']}, *bundle['evidence']]
+    for i, item in enumerate(items):
+        metadata = {k: item[k] for k in ('kind', 'repository', 'path', 'start_line', 'end_line',
+                    'total_lines', 'revision', 'base', 'head', 'source', 'verification') if k in item}
+        label = f'e{i}'
+        block_start = len(stream)
+        stream += f'\n--- FAULTLINE EVIDENCE {label} ---\n'
+        start = len(stream)
+        stream += item['text']
+        blocks.append({'id': label, **metadata, 'block_start_char': block_start,
+                       'start_char': start, 'end_char': len(stream)})
+    return {**change, 'diff': stream, 'context_evidence': {
+        'contract': COMPACT, 'blocks': blocks, 'gaps': bundle['gaps']}}
+
+
 def annotate(request, context):
     if context.get('context_evidence'):
-        request['state']['change']['context_evidence'] = context['context_evidence']
+        evidence = context['context_evidence']
+        span = context.get('diff_evidence', {})
+        if evidence['contract'] == COMPACT and span.get('is_whole') is False:
+            # Character offsets refer to the complete stream, as does diff_evidence.
+            # Keep the label for any block whose header or source intersects it.
+            evidence = {**evidence, 'blocks': [b for b in evidence['blocks']
+                if b['block_start_char'] < span['end_char'] and b['end_char'] > span['start_char']]}
+        request['state']['change']['context_evidence'] = evidence
         if not request['state']['reference_contract'].endswith('+context-v1'):
             request['state']['reference_contract'] += '+context-v1'
         for question in request['questions'].values():

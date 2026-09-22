@@ -13,6 +13,7 @@ def add_commands(commands):
     context.add_argument('--head', default='HEAD')
     context.add_argument('--input', type=Path, required=True, help='Version 1 context manifest')
     context.add_argument('--output', type=Path)
+    context.add_argument('--compact', action='store_true', help='Experimental compact source labels; preserve exact source and full local provenance')
     cache = commands.add_parser('cache', help='Maintain local Jev answer storage')
     cache.add_argument('cache_action', choices=['compact'], help='Migrate verified legacy JSON answers to SQLite and remove their old cache files')
     select = commands.add_parser('select', help='Save a Jev would-run report without executing tests')
@@ -32,7 +33,7 @@ def add_commands(commands):
     benchmark.add_argument('--id')
     benchmark.add_argument('--title', default='', help='Optional outcome-blind PR/MR title')
     benchmark.add_argument('--description', default='', help='Optional outcome-blind PR/MR description')
-    benchmark.add_argument('--context', type=Path, help='Frozen context bundle matching this exact change; omit for diff-only baseline')
+    benchmark.add_argument('--context', type=Path, help='Frozen context bundle matching this exact change; omit to score the diff and test source')
     benchmark.add_argument('--prepare', action='store_true', help='Read exact sources and estimate Jev requests without calling the API')
     benchmark.add_argument('--max-requests', type=int, help='Total HTTP attempts including retries')
     benchmark.add_argument('--selection-seconds', type=float, help='Shared inference deadline for all judgments')
@@ -101,7 +102,7 @@ def dispatch(store, args):
         return AnswerCache(store).compact()
     if args.command == 'context':
         from .context import build
-        return build(store, args.base, args.head, args.input, args.output)
+        return build(store, args.base, args.head, args.input, args.output, compact=args.compact)
     if args.command == 'benchmark':
         from .benchmark import benchmark
         return benchmark(store, args.base, args.head, identifier=args.id, prepare=args.prepare, output=args.output,

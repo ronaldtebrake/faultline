@@ -2,11 +2,11 @@
 
 Use the installed `faultline` CLI or `python3 "<this-skill>/scripts/run.py" --root "<repo>"`. Configure actual test paths using [the source workflow](workflow.md).
 
-## Gather context or retain a diff-only baseline
+## Start with the diff
 
-For normal agent use, follow [context gathering](context.md) to freeze product integration source and, where needed, upstream dependency changes. Add `--context <bundle.json>` to both preparation and scoring below. The engine validates the bundle against the exact change before inference. All tests remain eligible.
+Commands without `--context` score the cumulative diff against test source. When changed implementation is missing, follow [context gathering](context.md), then add `--context <bundle.json>` to preparation and scoring. This is optional evidence collection, not an instruction to investigate every caller. All tests remain eligible.
 
-Commands without `--context` retain the diff/test-source baseline. They do not discover product callers or fetch dependency source automatically. Use that baseline for controlled comparisons; do not present it as an enriched assessment. Context bundles work with `adaptive`, `source`, and `whole` modes, not `file-pairs`. The older `select` receipt workflow does not consume bundles.
+The engine validates a bundle against the exact change but does not fetch upstream source. Bundles work with `adaptive`, `source`, and `whole` modes, not `file-pairs`. The older `select` receipt workflow does not consume bundles.
 
 ## Prepare, then score
 
@@ -50,6 +50,14 @@ Other evidence modes are explicit experiments:
 - `source`: full cumulative diff plus whole test file; oversized inputs stay unresolved.
 - `whole`: additionally supplies complete configured setup source; can need larger requests.
 - `file-pairs`: whole test files against bounded groups of complete changed-file sections; cross-section interactions are not assessed. It cannot supply cumulative-change probabilities for the offline threshold comparison.
+
+## Spending budget
+
+Use one allowance per PR snapshot across gates, scoring, retries, and recovery. The skill targets less than $0.50 and stops before $0.90 in Jev usage; externally performed agent costs are separate and may be unknown. `--max-requests` is enforced per invocation. There is no persistent CLI dollar cap, and `--pricing` only affects reports.
+
+Before each live invocation, bound its maximum charge using the pinned model's current price and maximum input per request. For `jev-1.13.0`, the [published limits and price](https://docs.typesafe.ai/models), checked 2026-09-20, are 64k input tokens per request, $0.042 per million input tokens, and free outputs. Reserving 65,536 tokens per HTTP attempt gives a conservative $0.002753 allowance. Count every attempted request, including missing-usage failures and retries; do not estimate from bytes or assume they were free.
+
+For that model, allocate at most `floor(remaining_usd / 0.002753)` new attempts, including any gate calls. For example, $0.90 permits 326 attempts total. Track all earlier attempts in an ignored per-snapshot ledger and subtract them before recovery; related benchmark variants share the allowance. Known response usage can support a tighter reservation only with a guard that reserves the maximum before each new attempt. Do not copy these numbers to a different model or changed price. If the bound or prior spending is unavailable, stop paid work until it can be established. Preparation and reports remain available offline.
 
 ## Read decisions and costs
 
