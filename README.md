@@ -21,12 +21,20 @@ Required tests and uncertain assessments stay RUN. Relevance is not a failure pr
 
 ## Get started
 
-Follow [installation and setup](docs/install.md), then ask your agent:
+Install the self-contained skill (Git, Python 3.10+, and npm for the installer):
 
-> Use Faultline to benchmark this PR. Start with the diff and collect only missing implementation evidence. Show the expected Jev work and keep total Jev usage below $0.90, including retries. Save a report with 10%, 25%, and 50% relevance comparisons. Do not run tests or change CI.
+```bash
+npx skills add https://github.com/ronaldtebrake/faultline --skill faultline
+```
+
+Follow [setup and API-key steps](docs/install.md), then ask your agent:
+
+> Use Faultline to assess this PR. Start with the diff and collect only missing implementation evidence. Show the expected Jev work and keep total Jev usage below $0.90, including retries. Save a shareable HTML report with 10%, 25%, and 50% relevance comparisons. Do not run tests or change CI.
+
+Each new assessment is fresh by default. Paid progress stays in one journal per run; cross-run answer reuse is optional. The HTML report works offline, without JavaScript. [See a synthetic sample](docs/demo/report.html).
 
 - [Architecture](docs/architecture.md): what runs where and what gets stored.
-- [Commands](docs/commands.md): prepare, score, recover, and report.
+- [Commands](docs/commands.md): setup, assess, resume, and report.
 - [Validation plan](PLAN.md): what remains before selective CI execution.
 - [Anonymized comparison](docs/evaluation/selector-comparison.md): the earlier evidence behind the Jev-only direction.
 - [Performance milestone](docs/evaluation/jev-performance.md): fresh-call experiments, measured costs, and what is still experimental.

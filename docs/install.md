@@ -1,90 +1,66 @@
-# Install and set up Faultline
+# Install Faultline
 
-You need Git and Python 3.10+. Analysis does not require application dependencies or test runners.
+You need Git and Python 3.10+. Faultline reads test source; setup and assessment do not start your application or run tests.
 
-## 1. Install the skill or CLI
+## With a coding agent
 
-For a coding agent, run this in the repository you want to analyze. The installer also needs Node.js/npm:
+Run this in the repository you want to assess. The skill installer needs Node.js/npm:
 
 ```bash
 npx skills add https://github.com/ronaldtebrake/faultline --skill faultline
 ```
 
-Choose your agent, then start a new session. If the repository is private, Git must be authenticated with an account that has access.
-
-For agents working on Jev inputs, scoring, or performance, also install the recommended [TypeSafe companion skill](https://github.com/typesafe-ai/skills):
-
-```bash
-npx skills add typesafe-ai/skills --skill typesafe-ai
-```
-
-Select the same agent and start a new session after installation. Faultline's instructions use this guidance when relevant. The CLI and CI do not require the companion skill.
-
-For terminal or CI use, install the standalone CLI:
-
-```bash
-python3 -m venv ~/.venvs/faultline
-~/.venvs/faultline/bin/pip install 'git+https://github.com/ronaldtebrake/faultline.git'
-export PATH="$HOME/.venvs/faultline/bin:$PATH"
-faultline --version
-```
-
-Both contain the same engine. If you installed only the skill, your agent invokes `python3 "<installed-skill>/scripts/run.py"` instead of `faultline` in the commands below.
-
-## 2. Configure the project
+Select your agent and start a new session. The skill includes its Python engine: no separate pip install, database service, or second skill is needed. Private repositories require authenticated Git access.
 
 Ask your agent:
 
-> Set up Faultline with this repository’s actual test paths, change scope, variants, and must-run rules. Validate the inventory without calling Jev, starting the application, or running tests.
+> Set up Faultline for this repository. Review the actual test paths, variants and change scope, and validate the inventory without running tests.
 
-Or create `faultline.json` yourself. Adapt this example to suites that actually exist:
+The agent saves `faultline.json`. Review and commit it so teammates reuse the setup. Empty suites and unsupported test conventions need attention; filename suggestions are not proof of a complete inventory.
 
-```json
-{
-  "schema_version": 2,
-  "scope": ["src/**", "config/**"],
-  "suites": [
-    {"id": "unit", "sources": ["tests/**/*.test.ts"]},
-    {"id": "acceptance", "sources": ["features/**/*.feature"]}
-  ]
-}
-```
-
-```bash
-faultline init
-faultline discover --revision HEAD
-```
-
-Check the listed files, then commit `faultline.json` to share the setup. Empty suites remain incomplete. See the [configuration reference](../skills/faultline/references/workflow.md) for shared inputs, required tests, and variants.
-
-## 3. Add your Jev key
-
-Create `.faultline/.env` in the project:
+Add your key to the ignored `.faultline/.env` created during setup:
 
 ```dotenv
 TYPESAFE_API_KEY="your-key"
 ```
 
-`init` keeps `.faultline/` ignored. Faultline reads the key in terminals and IDEs. The process environment takes precedence; root `.env` is the final fallback. Keep keys out of Git and chat. Live scoring sends selected change context and test source to Jev.
+The process environment takes precedence; root `.env` is the final fallback. This works in IDEs as well as terminals. Enter the key locally, never in chat or Git. Scoring sends selected change evidence and test source to Jev.
 
-## 4. Benchmark a PR
+Then ask:
 
-Ask your agent to benchmark the PR from its diff, gather only missing implementation evidence, and stay within your spending budget. It can analyze an open or closed PR without switching your branch.
+> Use Faultline to assess this PR. Start with the diff and collect only missing implementation evidence. Prepare offline, keep Jev spending below $0.90 including retries, and give me the HTML report with 10/25/50% comparisons. Do not run tests.
 
-For CLI use, follow [the commands guide](commands.md). You need the cumulative diff base and exact tested head locally. Prepare first, inspect the work estimate, then score. The CLI accepts an agent-prepared context bundle; without one, it scores the diff and test source alone.
+The agent resolves the PR's original base and head, checks the work estimate, and invokes `assess`. The result includes a shareable HTML file and a run ID for recovery. Context investigation remains agent work and is costed separately.
 
-## Updates and local development
+## Terminal or CI
 
-Rerun the skill installer to update. For the CLI, repeat the pip command with `--upgrade`. Pin CI installations to a reviewed commit.
-
-To use a local Faultline checkout:
+The standalone CLI contains the same engine:
 
 ```bash
-npx skills add /path/to/faultline --skill faultline
-# Or, for the CLI:
-~/.venvs/faultline/bin/pip install -e /path/to/faultline
+python3 -m venv ~/.venvs/faultline
+~/.venvs/faultline/bin/pip install 'git+https://github.com/ronaldtebrake/faultline.git'
+export PATH="$HOME/.venvs/faultline/bin:$PATH"
+faultline setup
 ```
 
-Reinstall copied skills after source changes. Editable CLI installs read that checkout directly.
+Review the suggested test paths, then configure them with `setup --source '<test-glob>' --scope '<source-glob>'`, or create multiple suites in `faultline.json`. Add the key as above and follow [the commands guide](commands.md). CI should pin installation to a reviewed commit.
 
-If TLS verification fails, repair the active Python environment’s trust store. Optional `certifi` or approved `SSL_CERT_FILE`/`SSL_CERT_DIR` settings can provide trusted certificates. Do not disable verification.
+To see the report format without credentials or API calls:
+
+```bash
+faultline report --demo --output faultline-demo.html
+```
+
+Skill-only users can ask their agent to generate that demo. The HTML uses invented data.
+
+## Updating and contributing
+
+Rerun the skill installer to update; copied skills include a copy of the engine. For the CLI, repeat the pip command with `--upgrade`. For local development, use `pip install -e /path/to/faultline`; reinstall copied skills after changing their source. Native Codex and Claude plugin manifests point at the same bundled skill.
+
+Contributors changing Jev questions, inputs or transport should also install the [TypeSafe guidance](https://github.com/typesafe-ai/skills):
+
+```bash
+npx skills add typesafe-ai/skills --skill typesafe-ai
+```
+
+Routine Faultline users do not need it. If TLS verification fails, repair Python's trust store or use an approved `SSL_CERT_FILE`/`SSL_CERT_DIR`; optional `certifi` is supported. Never disable verification.

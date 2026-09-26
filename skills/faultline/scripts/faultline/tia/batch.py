@@ -9,7 +9,6 @@ from ..core import FaultlineError, digest, now
 from ..credentials import api_key
 from ..jev import ENDPOINT, QUESTION, QUESTION_VERSION, validate_answer
 from ..network import Budget, HTTP, InvalidResponse, InputTooLarge
-from .cache import AnswerCache
 
 BATCH_VERSION = 'complete-target-packing-v4'
 
@@ -80,12 +79,15 @@ def usage(response):
 
 
 class BatchedJev:
-    def __init__(self, store, config, *, deadline=None, transport=None):
+    def __init__(self, store, config, *, deadline=None, transport=None, answers=None, budget=None):
         self.store, self.config = store, config
         self.deadline = deadline if deadline is not None else time.monotonic() + config['selection_seconds']
-        self.budget = Budget(config['jev_requests'])
+        self.budget = budget if budget is not None else Budget(config['jev_requests'])
         self.http = transport
-        self.cache = AnswerCache(store)
+        if answers is None:
+            from .cache import AnswerCache
+            answers = AnswerCache(store)
+        self.cache = answers
 
     def evaluate_source(self, context, profiles, *, dry_run=False):
         from .packing import SourcePlan
@@ -125,9 +127,10 @@ class BatchedJev:
         return {**result, **progress, 'rows': rows, 'errors': errors,
                 'complete': bool(profiles) and not errors and len(rows) == len(profiles)}
 
-    def cached(self, request, qid):
+    def cached(self, request, qid, *, probe=False):
         key = identity(request)
-        value = self.cache.get(key, qid)
+        getter = getattr(self.cache, 'peek', self.cache.get) if probe else self.cache.get
+        value = getter(key, qid)
         if value is None:
             return None
         if value.get('request_key') != key or value.get('question_id') != qid:
@@ -178,7 +181,7 @@ class BatchedJev:
             children = split_questions(request)
             if children and len(missing) == len(batch_ids):
                 try:
-                    cached_children = all(self.cached(child, qid) is not None for child in children for qid in child['questions'])
+                    cached_children = all(self.cached(child, qid, probe=True) is not None for child in children for qid in child['questions'])
                 except FaultlineError:
                     cached_children = False
                 if cached_children:
@@ -223,6 +226,8 @@ class BatchedJev:
                     # Transport retries also count as question submissions.
                     limit = self.budget.limit
                     used = self.budget.used
+                    if hasattr(self.budget, 'request_key'):
+                        self.budget.request_key = key
                     extra_calls = (self.config.get('max_evidence_pairs', 10000) - submitted_questions) // len(batch_ids)
                     self.budget.limit = min(limit, used + 1 + extra_calls)
                     try:
@@ -238,6 +243,8 @@ class BatchedJev:
                         submitted_questions += max(0, self.budget.used - used - 1) * len(batch_ids)
                         self.budget.limit = limit
                     usage_records.append(usage(response))
+                    if hasattr(self.budget, 'record_usage'):
+                        self.budget.record_usage(usage(response))
                     still_invalid = []
                     for qid in pending:
                         id = batch_ids[int(qid[1:])]

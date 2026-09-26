@@ -56,6 +56,47 @@ class GitSources:
         self.cache[path] = p.stdout
         return p.stdout
 
+    def prefetch(self, paths):
+        """Read immutable blobs in bounded batches instead of one process per file."""
+        pending, size = [], 0
+
+        def read_batch(batch):
+            if not batch:
+                return
+            p = subprocess.run(['git', '-C', str(self.root), 'cat-file', '--batch'],
+                               input=''.join(self.files[path]['oid'] + '\n' for path in batch).encode(),
+                               capture_output=True, timeout=60)
+            if p.returncode:
+                raise FaultlineError('Cannot read source batch at the requested revision')
+            cursor = 0
+            for path in batch:
+                entry = self.files[path]
+                end = p.stdout.find(b'\n', cursor)
+                expected = f"{entry['oid']} blob {entry['size']}".encode()
+                if end < 0 or p.stdout[cursor:end] != expected:
+                    raise FaultlineError('Git source batch identity or size mismatch')
+                start, cursor = end + 1, end + 1 + entry['size']
+                if p.stdout[cursor:cursor + 1] != b'\n':
+                    raise FaultlineError('Incomplete Git source batch')
+                self.cache[path] = p.stdout[start:cursor]
+                cursor += 1
+            if cursor != len(p.stdout):
+                raise FaultlineError('Unexpected trailing Git source batch data')
+
+        try:
+            for path in sorted(set(paths)):
+                entry = self.files.get(path)
+                if path in self.cache or not entry or not entry['mode'].startswith('100') or entry['size'] > self.max_bytes:
+                    continue
+                if pending and size + entry['size'] > 8 * 1024 * 1024:
+                    read_batch(pending)
+                    pending, size = [], 0
+                pending.append(path)
+                size += entry['size']
+            read_batch(pending)
+        except subprocess.TimeoutExpired:
+            raise FaultlineError('Git source batch timed out') from None
+
     def hashes(self, paths):
         # Git object IDs bind exact bytes without reading all files into memory.
         return {p: self.files[p]['oid'] if p in self.files else None for p in sorted(set(paths))}

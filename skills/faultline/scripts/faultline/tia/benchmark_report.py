@@ -119,7 +119,7 @@ def routing_data(document, *, pricing=None):
                           'invocation_usage': usage_metrics(policies[arm], price)}
     return {'target_count': len(rows), 'policies': summaries, 'targets': rows, 'pricing': price,
             'pricing_basis': 'report override' if pricing is not None else 'frozen benchmark settings',
-            'cost_scope': ('Cumulative original and recovery inference; new recovery usage is shown separately.' if d.get('recovery') else 'HTTP attempts in this invocation; cached judgments are not billed again. Completing unassessed targets is extra work.'),
+            'cost_scope': ('All recorded attempts in this assessment run, including earlier invocations; reused answers were charged to their original runs.' if d.get('assessment') else 'Cumulative original and recovery inference; new recovery usage is shown separately.' if d.get('recovery') else 'HTTP attempts in this invocation; cached judgments are not billed again. Completing unassessed targets is extra work.'),
             'complete': d['complete']}
 
 
@@ -276,6 +276,12 @@ def render(path, document=None, *, pricing=None, output=None, format='full', rep
     windowed = sum(j.get('score_scope') == 'source-window-recovery-v1' for j in p['judgments'].values())
     lines += ['', f"Windowed targets: **{windowed}**. Every source/change range must be assessed. Cross-window interactions and unsupplied external setup bodies are not assessed in adaptive/source mode; maximum part relevance is not a calibrated whole-change probability.",
               f"Validation retries: {p.get('validation_retries', 0)}. Analysis: {d['selection_seconds']:.1f}s; inference: {d['inference_seconds']:.1f}s."]
+    if d.get('assessment'):
+        a = d['assessment']
+        lines += ['', f"Assessment run: `{a['run_id']}`. New answers: {a['new_answers']}; recovered from this run: {a['resumed_answers']}; reused from other runs: {a['reused_answers']}.",
+                  f"Engine to report: {a.get('invocation_seconds', 0):.1f}s this invocation; {a['prior_invocation_seconds']:.1f}s in earlier completed invocations. " + a['timing_scope'],
+                  'Abruptly interrupted phase durations may be unrecorded. Agent time and costs are separate; missing measurements remain unknown.']
+        lines.extend('- ' + cell(w) for w in a['warnings'])
     if d.get('recovery'):
         current = m['invocation_usage']
         lines += [f"This recovery alone: {current['requests']} HTTP attempts, {number_text(current['input_tokens'])} input tokens, {money(current['input_usd_estimate'])}. The main table includes parent inference."]

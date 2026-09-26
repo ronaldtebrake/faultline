@@ -16,3 +16,5 @@ Open `index.html` in a browser. On GitHub, download the file first. It works off
 The inputs and selections are invented. Counts represent proposed test files, not execution time or measured savings. This demo illustrates the TIA flow; Faultline currently produces shadow reports, and this page executes no tests. Production policies also retain required tests and unresolved assessments, details intentionally omitted from this short illustration.
 
 All HTML, CSS, and JavaScript are in `index.html`. No dependencies, fonts, or network requests. Autoplay and looping respect reduced-motion preferences. The `window.faultlineDemo` API exposes `seek(seconds)`, `setScenario(name, animate)`, `play()`, `pause()`, and `state()` for captures. Refresh the poster, video, and GIF when editing the demo.
+
+[Open the sample assessment report](report.html) for script-free 10/25/50% comparisons. Its test names, scores, costs and timings are invented. Download the HTML from GitHub to use its tabs offline.

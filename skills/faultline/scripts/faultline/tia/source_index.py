@@ -7,6 +7,7 @@ from .inventory import source_inventory
 def open_index(store, config, ref='HEAD', *, native=False):
     rev = revision(store.root, ref)
     source = GitSources(store.root, rev, config['evaluator']['max_test_bytes'])
+    source.prefetch(source.glob([pattern for suite in config['suites'] for pattern in suite['sources']]))
     inventory = source_inventory(store.root, config, snapshot=source, native=native)
     return source, inventory, {'basis': 'git', 'revision': rev,
                               'configuration_hash': config['config_hash'],

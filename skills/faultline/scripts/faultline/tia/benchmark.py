@@ -150,7 +150,7 @@ def policy(suites, result):
             'remaining_requests': result['remaining_requests']}
 
 
-def benchmark(store, base, head='HEAD', *, identifier=None, prepare=False, output=None, max_requests=None, selection_seconds=None, evaluator=None, title='', description='', evidence_mode='adaptive', max_state_bytes=None, max_batch_bytes=None, context_path=None):
+def benchmark(store, base, head='HEAD', *, identifier=None, prepare=False, output=None, max_requests=None, selection_seconds=None, evaluator=None, title='', description='', evidence_mode='adaptive', max_state_bytes=None, max_batch_bytes=None, context_path=None, run_progress=None, document_only=False):
     started = time.monotonic()
     from .benchmark_source import SourcePlan, VERSION as SOURCE_VERSION
     if evidence_mode not in ('adaptive', 'source', 'whole', 'file-pairs'):
@@ -206,6 +206,8 @@ def benchmark(store, base, head='HEAD', *, identifier=None, prepare=False, outpu
         groups, rejected = packet_plan.groups, packet_plan.rejected
     inference_started = time.monotonic()
     engine = evaluator or BatchedJev(store, ev, deadline=inference_started + ev['selection_seconds'])
+    if run_progress is not None:
+        engine.deadline = inference_started + ev['selection_seconds']
     # One engine, one transport, one request ceiling and one deadline for every judgment.
     totals = {arm: {'rows': {}, 'errors': {**missing, **rejected[arm]}, 'usage': [], 'requests': 0,
                    'cache_hits': 0, 'remaining_requests': 0, 'planned_requests': 0, 'validation_retries': 0, 'invalid_answers': []} for arm in ARMS}
@@ -297,6 +299,8 @@ def benchmark(store, base, head='HEAD', *, identifier=None, prepare=False, outpu
             'Agent-selected source context supplements the original diff; unchanged excerpts are not code changes. All configured candidates remain eligible.',
             'Only supplied supporting source bodies are available; absent setup implementations and cross-window interactions remain outside scope.'])
         document = seal(document)
+    if document_only:
+        return document
     destination = Path(output) if output else store.path / 'benchmarks' / (document['integrity'] + '.json')
     save_frozen(destination, document)
     return render(destination, document)

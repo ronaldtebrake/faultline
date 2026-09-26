@@ -9,9 +9,10 @@ from .common import checked, seal
 
 
 class AnswerCache:
-    def __init__(self, store):
+    def __init__(self, store, max_bytes=None):
         self.path = store.path / 'jev-cache.sqlite'
         self.legacy = store.path / 'batch-cache'
+        self.max_bytes = max_bytes
 
     def get(self, key, qid):
         if self.path.exists():
@@ -35,6 +36,11 @@ class AnswerCache:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         try:
             with closing(sqlite3.connect(self.path, timeout=10)) as db, db:
+                if self.max_bytes:
+                    if self.path.stat().st_size > self.max_bytes:
+                        raise FaultlineError('Optional cache size limit reached')
+                    page_size = db.execute('PRAGMA page_size').fetchone()[0]
+                    db.execute('PRAGMA max_page_count=' + str(max(1, self.max_bytes // page_size)))
                 db.execute('BEGIN IMMEDIATE')
                 db.execute('CREATE TABLE IF NOT EXISTS answers(request_key TEXT, question_id TEXT, value TEXT NOT NULL, PRIMARY KEY(request_key,question_id))')
                 row = db.execute('SELECT value FROM answers WHERE request_key=? AND question_id=?',

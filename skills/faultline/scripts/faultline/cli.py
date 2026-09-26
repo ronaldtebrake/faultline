@@ -13,6 +13,8 @@ def parser():
     cli.add_argument('--root', default='.', help='Target repository (defaults to the current Git root)')
     cli.add_argument('--version', action='version', version=f'faultline {__version__}')
     commands = cli.add_subparsers(dest='command', required=True)
+    from .tia.workflow_cli import add_commands as add_workflow
+    add_workflow(commands)
     init = commands.add_parser('init', help='Initialize ignored storage and validate configured Git test sources')
     init.add_argument('--revision', default='HEAD', help='Git revision to inspect without executing tests')
     add_commands(commands)
@@ -23,7 +25,10 @@ def main(argv=None):
     args = parser().parse_args(argv)
     try:
         store = Store(repo_root(args.root))
-        if args.command == 'init':
+        if args.command in ('setup', 'assess', 'report'):
+            from .tia.workflow_cli import dispatch as workflow
+            result = workflow(store, args)
+        elif args.command == 'init':
             store.initialize()
             result = {'storage': str(store.path), 'status': 'Create faultline.json, then run init to validate sources',
                       'execution': 'none', 'jev_requests': 0}
@@ -44,7 +49,7 @@ def main(argv=None):
         print(f'faultline: {exc}', file=sys.stderr)
         return 1
     except KeyboardInterrupt:
-        print('faultline: interrupted; completed cache entries are retained.', file=sys.stderr)
+        print('faultline: interrupted; completed evidence is retained. Resume an assessment by its run ID.', file=sys.stderr)
         return 130
 
 
