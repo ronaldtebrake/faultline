@@ -33,8 +33,9 @@ def bisect_range(text, start, end, preferred=()):
 
 
 class RecoveryPlan:
-    def __init__(self, context, profiles, targets, config):
+    def __init__(self, context, profiles, targets, config, *, request_factory=None):
         self.context, self.config = context, config
+        self.whole_request = request_factory or whole_request
         self.profiles = {p['id']: p for p in profiles}
         self.groups, self.parts = [], {arm: {} for arm in targets}
         self.rejected = {arm: {} for arm in targets}
@@ -43,7 +44,7 @@ class RecoveryPlan:
             packets = []
             for id in sorted(ids, key=lambda i: (len(self.profiles[i]['source_text']), i)):
                 profile = self.profiles[id]
-                request = whole_request(context, [profile], config, arm)
+                request = self.whole_request(context, [profile], config, arm)
                 if within_limits(request, config):
                     self.whole[arm].add(id)
                     self.parts[arm][id] = [{'id': id, 'source_range': [0, len(profile['source_text'])], 'change_range': [0, len(context['diff'])], 'whole': True}]
@@ -127,7 +128,7 @@ class RecoveryPlan:
         return {**profile, 'id': id, 'source_text': text[start:end], 'source_sha256': info['source_part_sha256']}, info
 
     def request(self, context, items, arm):
-        value = whole_request(context, [p for p, _ in items], self.config, arm)
+        value = self.whole_request(context, [p for p, _ in items], self.config, arm)
         windowed = any(info for _, info in items)
         if windowed:
             value['state']['reference_contract'] = VERSION

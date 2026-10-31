@@ -6,13 +6,13 @@ from pathlib import Path
 
 from ..core import FaultlineError, digest, now, number, read_json, write_json, write_text
 from .common import checked, save_frozen, seal
-from .runners import xml
+from .runners import xml, source_path
 
 STATUSES = {'passed', 'failed', 'error', 'skipped', 'unknown'}
 CLASSES = {'confirmed_regression', 'flake', 'infrastructure', 'baseline', 'unknown'}
 
 
-def junit(path, suite):
+def junit(path, suite, *, root=None, config=None):
     if not Path(path).exists():
         return [], [{'reason': 'missing_junit_artifact'}]
     paths = sorted(Path(path).glob('*.xml')) if Path(path).is_dir() else [Path(path)]
@@ -33,6 +33,11 @@ def junit(path, suite):
                 name = case.get('name', '')
                 if suite.get('runner') == 'behat':
                     source = group.get('file', '').replace('\\', '/')
+                    if root is not None and config is not None:
+                        try:
+                            source = source_path(root, config, source) if source else ''
+                        except FaultlineError:
+                            source = ''
                     member = f'{i}:{name}'
                     # Source suffix must match exactly one native unit; never fuzzy name-match.
                     ids = [u['id'] for u in suite['units'] if (source == u['source'] or source.endswith('/' + u['source'])) and member in u['members']]

@@ -45,6 +45,21 @@ faultline setup
 
 Review the suggested test paths, then configure them with `setup --source '<test-glob>' --scope '<source-glob>'`, or create multiple suites in `faultline.json`. Add the key as above and follow [the commands guide](commands.md). CI should pin installation to a reviewed commit.
 
+GitHub Actions consumers can use the [setup action](../actions/setup/README.md)
+at a full commit SHA instead of committing the engine or a wheel:
+
+```yaml
+- uses: actions/setup-python@v6
+  with:
+    python-version: '3.12'
+- uses: ronaldtebrake/faultline/actions/setup@<reviewed-full-commit-sha>
+- run: '"$FAULTLINE_CLI" graph build'
+```
+
+The action installs that exact source revision in a fresh runner-local virtual
+environment. Use `"$FAULTLINE_PYTHON"` for helpers that import Faultline; the
+consumer's default Python and dependencies remain unchanged.
+
 To see the report format without credentials or API calls:
 
 ```bash

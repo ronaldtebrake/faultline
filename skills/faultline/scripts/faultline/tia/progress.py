@@ -48,6 +48,9 @@ class Progress:
         self.initial = set()
         self.elapsed = []
         self.request_ceiling = None
+        self.cooldown_until = 0
+        self.noul_limits = None
+        self.attempt_times = []
         if self.path.exists():
             # A partial last write cannot have authorized a request: append must
             # return successfully before transport starts. Keep all complete records.
@@ -75,6 +78,7 @@ class Progress:
         kind, value = event['event'], event['value']
         if kind == 'attempt':
             self.attempts.append({'request_key': value, 'usage': None})
+            self.attempt_times.append(event.get('at'))
         elif kind == 'usage':
             self.attempts[value['attempt']]['usage'] = value['usage']
         elif kind in ('answer', 'reused_answer'):
@@ -84,6 +88,10 @@ class Progress:
                 self.reused.add(key)
         elif kind == 'elapsed':
             self.elapsed.append(value)
+        elif kind == 'noul_limits':
+            self.noul_limits = value
+        elif kind == 'cooldown':
+            self.cooldown_until = value
         elif kind == 'ceiling':
             self.request_ceiling = value
         else:

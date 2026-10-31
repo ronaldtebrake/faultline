@@ -53,4 +53,3 @@ def source_inventory(root, config, *, native=False, snapshot=None):
                  'native_enrichment': native, 'created_at': now(), 'head': snapshot.revision if snapshot else revision(root),
                  'config_hash': config['config_hash'], 'suites': suites,
                  'execution_inputs': snapshot.hashes(inputs) if snapshot else hashes(root, inputs), 'complete': all(s['complete'] for s in suites)})
-

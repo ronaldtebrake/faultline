@@ -1,0 +1,22 @@
+name: Set up Faultline
+description: Install this exact Faultline revision in an isolated runner environment.
+inputs:
+  python:
+    description: Python 3.10+ executable already available on the runner.
+    default: python3
+outputs:
+  python:
+    description: Python executable with Faultline installed.
+    value: ${{ steps.install.outputs.python }}
+  cli:
+    description: Installed Faultline command.
+    value: ${{ steps.install.outputs.cli }}
+runs:
+  using: composite
+  steps:
+    - id: install
+      shell: bash
+      env:
+        FAULTLINE_SETUP_PYTHON: ${{ inputs.python }}
+        FAULTLINE_ACTION_PATH: ${{ github.action_path }}
+      run: bash "$FAULTLINE_ACTION_PATH/install.sh"

@@ -15,6 +15,10 @@ def parser():
     commands = cli.add_subparsers(dest='command', required=True)
     from .tia.workflow_cli import add_commands as add_workflow
     add_workflow(commands)
+    from .tia.ci_cli import add_commands as add_ci
+    add_ci(commands)
+    from .tia.dependency_cli import add_commands as add_graph
+    add_graph(commands)
     init = commands.add_parser('init', help='Initialize ignored storage and validate configured Git test sources')
     init.add_argument('--revision', default='HEAD', help='Git revision to inspect without executing tests')
     add_commands(commands)
@@ -28,6 +32,12 @@ def main(argv=None):
         if args.command in ('setup', 'assess', 'report'):
             from .tia.workflow_cli import dispatch as workflow
             result = workflow(store, args)
+        elif args.command == 'graph':
+            from .tia.dependency_cli import dispatch as graph
+            result = graph(store, args)
+        elif args.command.startswith('ci-') or args.command == 'export-selection':
+            from .tia.ci_cli import dispatch as ci
+            result = ci(store, args)
         elif args.command == 'init':
             store.initialize()
             result = {'storage': str(store.path), 'status': 'Create faultline.json, then run init to validate sources',
@@ -40,7 +50,7 @@ def main(argv=None):
         else:
             result = dispatch(store, args)
         print(json.dumps(result, indent=2, ensure_ascii=False))
-        if args.command == 'run':
+        if args.command in ('run', 'ci-run'):
             return result['exit_code']
         if args.command == 'select' and not result.get('dry_run') and result.get('semantic', {}).get('targets', 0) and not result.get('semantic_complete'):
             return 2

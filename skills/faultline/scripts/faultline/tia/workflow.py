@@ -185,4 +185,8 @@ def saved_report(store, *, path=None, run_id=None, output=None, demo=False):
         if not latest or not re.fullmatch(r'[a-f0-9]{64}\.json', latest.get('benchmark', '')):
             raise FaultlineError('No frozen report yet; resume the interrupted assessment')
         path = folder / latest['benchmark']
+    document = checked(path)
+    if document.get('kind') == 'impact-assessment':
+        from .impact_report import report as impact_report
+        return impact_report(store, document, output or path.parent / 'report')
     return report(path, output=output)

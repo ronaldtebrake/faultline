@@ -50,7 +50,7 @@ def source_path(root, suite, value):
     path = Path(value)
     path = path if path.is_absolute() else root / suite['cwd'] / path
     try:
-        return path.resolve().relative_to(root).as_posix()
+        return path.resolve().relative_to(root.resolve()).as_posix()
     except ValueError:
         raise FaultlineError('Runner source outside repository; configure path_map') from None
 
@@ -169,13 +169,14 @@ def discover_suite(root, suite, variant):
             version = 'generic-contract-v2'
             discoverer = generic_inventory
         else:
-            if suite['runner'] not in ('phpunit', 'behat'):
+            if suite['runner'] not in ('phpunit', 'behat', 'playwright'):
                 raise FaultlineError('Native discovery unavailable; source analysis remains available')
             version = invoke([*suite['command'], '--version'], cwd, suite['timeout_seconds']).stdout.strip()
-            supported = {'phpunit': r'PHPUnit 9\.6\.', 'behat': r'behat 3\.29\.'}
+            from .playwright_runner import inventory as playwright_inventory, SUPPORTED_VERSION
+            supported = {'phpunit': r'PHPUnit 9\.6\.', 'behat': r'behat 3\.29\.', 'playwright': r'Version ' + SUPPORTED_VERSION + r'\b'}
             if suite['runner'] not in supported or not re.search(supported[suite['runner']], version, re.I):
                 raise FaultlineError('Unsupported runner version; use full execution')
-            discoverer = {'phpunit': phpunit_inventory, 'behat': behat_inventory}[suite['runner']]
+            discoverer = {'phpunit': phpunit_inventory, 'behat': behat_inventory, 'playwright': playwright_inventory}[suite['runner']]
         with tempfile.TemporaryDirectory(prefix='faultline-discover-', dir=cwd) as temp:
             units = discoverer(root, suite, variant, Path(temp) / 'inventory')
         if not units:
@@ -187,4 +188,3 @@ def discover_suite(root, suite, variant):
     except (FaultlineError, OSError) as exc:
         result['errors'] = [str(exc)]
     return result
-

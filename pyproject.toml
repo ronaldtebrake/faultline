@@ -21,4 +21,4 @@ where = ["skills/faultline/scripts"]
 include = ["faultline*"]
 
 [tool.setuptools.package-data]
-"faultline.tia" = ["*.php"]
+"faultline.tia" = ["*.php", "*.mjs"]
