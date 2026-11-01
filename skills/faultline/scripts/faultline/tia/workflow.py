@@ -132,7 +132,7 @@ def assess(store, *, base=None, head='HEAD', identifier=None, title='', descript
             ev['jev_requests'] = progress.request_ceiling
         if progress.request_ceiling != ev['jev_requests']:
             progress.append('ceiling', ev['jev_requests'])
-        print(f'Faultline run {run_id}; resume with assess --resume {run_id}', file=sys.stderr)
+        print(f'Faultline run {run_id}; resume with assess --jev --resume {run_id}', file=sys.stderr)
         engine = BatchedJev(store, ev, answers=progress, budget=RunBudget(ev['jev_requests'], progress))
         if transport_factory:
             engine.http = transport_factory(engine)
@@ -186,6 +186,9 @@ def saved_report(store, *, path=None, run_id=None, output=None, demo=False):
             raise FaultlineError('No frozen report yet; resume the interrupted assessment')
         path = folder / latest['benchmark']
     document = checked(path)
+    if document.get('kind') == 'graph-assessment':
+        from .graph_assessment import report as graph_report
+        return graph_report(document, output or path.parent / 'report')
     if document.get('kind') == 'impact-assessment':
         from .impact_report import report as impact_report
         return impact_report(store, document, output or path.parent / 'report')

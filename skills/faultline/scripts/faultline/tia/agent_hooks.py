@@ -11,11 +11,10 @@ from . import ci_handoff as handoff
 
 GUIDANCE = ('Use the Faultline skill before this push. Resolve the actual PR target branch, fetch origin, '
             'and use the merge base of that branch and the final HEAD as the assessment base. '
-            'Prepare focused context only where needed, assess the entire cumulative diff with noul-v1 '
-            'within the existing spending limit, then publish using ci-submit --run <id> --threshold 0.50 '
-            '--target-branch <branch> --repository <owner/repo>. Wait for published: true before retrying. '
-            'If scoring cannot complete, explicitly publish ci-submit --full --head HEAD --target-branch <branch> '
-            '--repository <owner/repo> --reason <reason>; this makes no Jev calls. Do not increase budgets or '
+            'Run assess --base <base> for the entire cumulative diff using the default offline graph report. Keep full CI running while '
+            'validating the graph: publish ci-submit --full --head HEAD --target-branch <branch> '
+            '--repository <owner/repo> --reason graph-validation. Wait for published: true before retrying. '
+            'Jev is optional and requires explicit --jev and an authorized budget. Do not increase budgets or '
             'loop on failed publication. Commit and push must be separate tool calls. Never bypass a hook '
             'or change its target branch without the user\'s approval.')
 

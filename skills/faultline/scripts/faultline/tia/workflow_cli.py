@@ -8,7 +8,8 @@ def add_commands(commands):
     setup.add_argument('--scope', action='append', help='Reviewed production-source scope; repeat as needed')
     setup.add_argument('--revision', default='HEAD')
     assess = commands.add_parser('assess', help='Assess a cumulative diff and save a shareable HTML report; runs no tests')
-    assess.add_argument('--evaluator', choices=['choice-v1', 'noul-v1'], help='Explicit scoring contract; default remains choice-v1')
+    assess.add_argument('--jev', action='store_true', help='Explicitly enable optional paid Jev scoring; off by default')
+    assess.add_argument('--evaluator', choices=['graph-v1', 'choice-v1', 'noul-v1'], help='Default graph-v1; Jev contracts require --jev')
     assess.add_argument('--max-cost', type=float, help='Noul run-wide USD ceiling, including unknown attempts; default $0.50')
     assess.add_argument('--base', help='Exact cumulative diff base, resolved by your Git host or agent')
     assess.add_argument('--head', default='HEAD')
@@ -17,7 +18,7 @@ def add_commands(commands):
     assess.add_argument('--description', default='')
     assess.add_argument('--context', type=Path, help='Verified context bundle for this change, only when needed')
     assess.add_argument('--dependencies', action='store_true', help='Noul: retain tests with dependency paths without scoring them; assess all unresolved tests')
-    assess.add_argument('--runtime', action='append', default=[], type=Path, help='Validated runtime evidence from the diff base or an available ancestor; requires --dependencies')
+    assess.add_argument('--runtime', action='append', default=[], type=Path, help='Validated runtime evidence from the diff base or an available ancestor; graph and Noul assessments')
     assess.add_argument('--dependency-catalog', help='Tracked application-surface catalog; opts into reusable relationship judgments')
     assess.add_argument('--relationship-threshold', type=float, help='Explicit experimental surface-membership retention cutoff in (0, 0.5]')
     assess.add_argument('--prepare', action='store_true', help='Estimate work offline without spending; opt-in relationship plans report available cache hits')
@@ -45,7 +46,18 @@ def dispatch(store, args):
         if args.resume and not re.fullmatch(r'[a-f0-9]{32}', args.resume):
             raise FaultlineError('Invalid assessment run ID')
         saved = read_json(store.path / 'runs' / args.resume / 'run.json', {}) if args.resume else {}
-        evaluator = args.evaluator or saved.get('evaluator', 'choice-v1')
+        evaluator = args.evaluator or saved.get('evaluator', 'choice-v1' if args.resume else ('noul-v1' if args.jev else 'graph-v1'))
+        if evaluator != 'graph-v1' and not args.jev:
+            raise FaultlineError('Jev is off by default. Scoring and resuming a Jev run require explicit --jev; use assess --base <base> for the offline graph.')
+        if evaluator == 'graph-v1':
+            if args.jev or args.context or args.dependency_catalog or args.relationship_threshold is not None or args.reuse_cache or args.fresh or args.max_cost is not None or args.max_requests is not None or args.selection_seconds is not None:
+                raise FaultlineError('Jev scoring options require --jev and a Jev evaluator; graph assessments reuse source facts automatically')
+            from .graph_assessment import assess as graph_assess
+            if args.resume and (args.base or args.head != 'HEAD' or args.runtime or args.title or args.description or args.id):
+                raise FaultlineError('Graph resume reopens frozen evidence; omit new revision and context arguments')
+            return graph_assess(store, base=args.base, head=args.head, identifier=args.id, title=args.title,
+                                description=args.description, prepare=args.prepare, resume=args.resume,
+                                runtime_paths=[(store.root / p).resolve() for p in args.runtime])
         if evaluator == 'noul-v1':
             if args.reuse_cache or (args.fresh and args.resume):
                 raise FaultlineError('Noul impact scores use fresh runs or explicit resume; use --dependency-catalog for separate reusable relationships')
@@ -54,7 +66,7 @@ def dispatch(store, args):
                                description=args.description, context_path=(store.root / args.context).resolve() if args.context else None,
                                prepare=args.prepare, resume=args.resume, max_requests=args.max_requests,
                                selection_seconds=args.selection_seconds, max_cost=args.max_cost,
-                               dependencies=args.dependencies, runtime_paths=[(store.root / p).resolve() for p in args.runtime],
+                               dependencies=args.dependencies if args.resume else True, runtime_paths=[(store.root / p).resolve() for p in args.runtime],
                                dependency_catalog=args.dependency_catalog, relationship_threshold=args.relationship_threshold,
                                relationship_fresh=args.fresh)
         if args.dependencies or args.runtime or args.dependency_catalog or args.relationship_threshold is not None:

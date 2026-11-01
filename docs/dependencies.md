@@ -43,7 +43,7 @@ isolated runner environment. Migration from the identical copied engine has also
 passed CI restoration with zero reparsing and matching carried observations.
 
 The first layer is available through `graph build`, `graph compare`, `graph
-context`, `graph import` and opt-in Noul `assess --dependencies`. See the
+context`, `graph import` and opt-in Noul `assess --jev --dependencies`. See the
 [bundled dependency guide](../skills/faultline/references/dependencies.md).
 
 Implemented: exact Git snapshots, reusable blob parsing, PHP/type references,

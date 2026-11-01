@@ -24,7 +24,7 @@ from missing source/runtime links. See below before enabling it.
 faultline graph build --revision HEAD
 faultline graph affected --file src/price.ts --revision HEAD
 faultline graph compare --base <cumulative-base> --head <tested-head>
-faultline assess --evaluator noul-v1 --dependencies \
+faultline assess --jev --evaluator noul-v1 --dependencies \
   --base <cumulative-base> --head <tested-head> --prepare
 ```
 
@@ -297,7 +297,7 @@ Historical observations remain evidence of their original revision and declared
 artifact hashes. Carry-forward to a historical destination that is not checked
 out requires fresh evidence; local artifacts cannot establish that environment.
 
-With `assess --dependencies --runtime <baseline>`, validated generation inputs
+With `assess --jev --dependencies --runtime <baseline>`, validated generation inputs
 become frozen assessment evidence. Targets needing inference include the complete
 declared source and artifact text; missing, binary or oversized evidence retains
 the target without a model request. Generation evidence is bounded at 96,000
@@ -349,7 +349,7 @@ validated runtime artifact with that revision's trusted CI artifacts. A later
 assessment can reuse a baseline from the base or an available ancestor:
 
 ```bash
-faultline assess --evaluator noul-v1 --dependencies \
+faultline assess --jev --evaluator noul-v1 --dependencies \
   --runtime <trusted-ancestor-runtime.json> \
   --base <cumulative-base> --head <tested-head> --prepare
 ```
@@ -450,7 +450,7 @@ Inspect boundaries and the proposed work offline:
 faultline graph build --catalog faultline-surfaces.json
 faultline graph compare --base <base> --head <head> \
   --catalog faultline-surfaces.json
-faultline assess --evaluator noul-v1 --dependencies \
+faultline assess --jev --evaluator noul-v1 --dependencies \
   --dependency-catalog faultline-surfaces.json --relationship-threshold 0.05 \
   --base <base> --head <head> --prepare
 ```

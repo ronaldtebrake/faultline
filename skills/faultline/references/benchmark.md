@@ -13,8 +13,8 @@ The engine validates a bundle against the exact change but does not fetch upstre
 Resolve the cumulative diff base and exact tested head through existing Git/hosting tools. Both revisions must be present locally. For a closed or merged PR, use its original base/tested head rather than current main; no checkout switch is necessary. Optional `--title` and `--description` must contain pre-outcome intent. Omit historical text whose earlier version cannot be verified.
 
 ```bash
-faultline benchmark --base <actual-base> --head <tested-head> --prepare --max-requests 100
-faultline benchmark --base <actual-base> --head <tested-head> --id PR-123 \
+faultline benchmark --jev --base <actual-base> --head <tested-head> --prepare --max-requests 100
+faultline benchmark --jev --base <actual-base> --head <tested-head> --id PR-123 \
   --max-requests 100 --selection-seconds 120
 ```
 
@@ -35,9 +35,9 @@ Each answer must be a valid five-level distribution. One invalid-response retry 
 For an incomplete saved source/adaptive case:
 
 ```bash
-faultline benchmark-recover --benchmark .faultline/benchmarks/<case>.json \
+faultline benchmark-recover --jev --benchmark .faultline/benchmarks/<case>.json \
   --prepare --max-requests 100 --selection-seconds 120
-faultline benchmark-recover --benchmark .faultline/benchmarks/<case>.json \
+faultline benchmark-recover --jev --benchmark .faultline/benchmarks/<case>.json \
   --max-requests 100 --selection-seconds 120
 ```
 

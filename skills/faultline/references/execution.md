@@ -31,7 +31,7 @@ Only use native discovery or execution when requested, in a prepared application
 
 ```bash
 faultline discover --revision HEAD --native
-faultline select --base <diff-base> --head HEAD --native
+faultline select --jev --base <diff-base> --head HEAD --native
 faultline run --selection <selection.json> --suite unit:default
 # Explicit execution, when requested:
 faultline run --selection <selection.json> --suite unit:default --execute

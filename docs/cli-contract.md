@@ -6,6 +6,25 @@ purpose. Python is the current implementation; a future Rust or Go executable
 can preserve this interface without copying an engine into consumer repositories.
 No performance improvement from another language has been established yet.
 
+## Default assessment
+
+`assess --base <merge-base> --head <head>` and `select --base <merge-base>`
+produce a sealed schema-2 `graph-assessment` document with evaluator `graph-v1`.
+The returned `path` points to frozen evidence. `tests` contains opaque target
+IDs, `affected`/`required`/`unresolved` status, reasons and positive paths;
+`summary` counts these mutually exclusive statuses. `complete` describes the
+configured inventory, not dependency coverage. `source_gaps` and `unknown_paths`
+remain visible. `ci_policy` is `full_suite`, `execution` is `none`, and both
+`coverage_complete` and `omission_authorized` are false. `jev_requests` and
+`cost_usd` are zero. These documents cannot be exported as execution selections.
+
+Graph facts reuse exact immutable inputs automatically. `--runtime` adds existing
+validated observations; it never runs a collector. `--prepare` returns the graph
+assessment without saving a run. `report --run <id>` and graph resume regenerate
+reports from frozen evidence. `assess --jev` explicitly enables the optional Noul
+contract with positive graph retention. Any paid run, including a resume,
+requires `--jev`; stored configuration and credentials do not enable it.
+
 ## File impact
 
 ```sh

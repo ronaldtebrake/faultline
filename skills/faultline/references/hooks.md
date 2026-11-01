@@ -21,8 +21,8 @@ The templates use supported synchronous pre-tool protocols: Cursor `beforeShellE
 ## When a push is blocked
 
 1. Resolve the actual PR target; refresh `origin/<target>` and compute its merge base with the final committed `HEAD`. Keep commit and push operations separate.
-2. Use the Faultline skill to prepare/assess the **whole cumulative diff**, with focused context if needed and the existing spending ceiling. Use `noul-v1` for export; do not substitute Choice scores.
-3. Publish with `ci-submit --run <id> --threshold 0.50 --target-branch <target> --repository <owner/repo>` and wait for `published: true`. If assessment cannot complete, explicitly publish `--full --head HEAD --reason '...'` instead.
+2. Assess the **whole cumulative diff** with `assess --base <base>`. The graph is offline; keep full CI running during validation.
+3. Publish `ci-submit --full --head HEAD --target-branch <target> --repository <owner/repo> --reason graph-validation` and wait for `published: true`. Paid Jev scoring requires a separate explicit opt-in and budget; it is not needed for this handoff.
 4. Retry the separate push. Matching readiness uses no network or inference. Publication failure is a blocker to report, not a reason to loop, increase spending or bypass the hook.
 
 An authorized push with this opt-in hook permits its decision handoff within the configured workflow and existing budget. It does not authorize unrelated workflow changes, comments, test execution locally, or a larger budget. If scoring lacks authorization, use the explicit full-execution handoff rather than spending.

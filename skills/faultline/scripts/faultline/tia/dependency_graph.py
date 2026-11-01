@@ -302,4 +302,4 @@ def compare(base, head):
             'runtime_reuse': {'base': base['runtime_reuse'], 'head': head['runtime_reuse']},
             'execution': 'none', 'jev_requests': 0,
             'omission_authorized': False,
-            'next': 'Retain affected tests; resolve remaining tests with semantic or complete dependency evidence.'}
+            'next': 'Keep full CI running while validating affected and unresolved tests against full-run evidence.'}

@@ -1,7 +1,7 @@
 # Faultline
 
 Faultline records test dependencies and explains which tests a file change can
-reach. It can also use Jev to assess a cumulative PR or MR diff against actual
+reach. The dependency graph is the default; Jev is optional and off. It can also use Jev to assess a cumulative PR or MR diff against actual
 test source, reporting proposed selections, reasons and inference costs.
 
 The goal is to reduce CI work while retaining useful regression detection. Today, Faultline is **report-only by default**: your CI keeps running its tests while you evaluate what Faultline would have selected. An opt-in PHPUnit, Behat or Playwright CI pilot can execute exported selections alongside full-run comparisons.
@@ -16,6 +16,7 @@ Install the [packaged CLI and agent skill](docs/install.md), configure
 `faultline.json`, then run:
 
 ```sh
+faultline assess --base <cumulative-merge-base> --head HEAD
 faultline graph build --output .faultline/graph.json
 faultline graph affected --file src/price.ts --output .faultline/impact.json
 faultline graph compare --base <base-commit> --head HEAD
@@ -28,16 +29,16 @@ shares parser facts between runs while existing tests keep running. Consumers
 install one pinned package; they do not commit a copy of the engine.
 
 The new workflow is a [commit-pinned preview](docs/install.md#with-a-coding-agent)
-on `codex/reusable-ci-setup`, pending adoption on the default branch.
+on `codex/graph-default`, pending adoption on the default branch.
 
 ## Optional Jev assessment
 
 1. Configure where your tests live in `faultline.json`. Faultline reads their source at the exact Git revision, without starting the application.
 2. Start with the cumulative diff. If the diff leaves behavior implicit, such as inherited behavior, an external patch, or a dependency update, your agent gathers focused source evidence. Faultline verifies and freezes it.
-3. Jev scores every readable configured test file. Faultline batches the work, keeps valid answers, and reports incomplete assessments explicitly.
+3. Explicit `assess --jev` retains graph-positive tests and scores the unresolved test source. Faultline batches the work, keeps valid answers, and reports incomplete assessments explicitly.
 4. Compare RUN/OMIT proposals at different relevance thresholds, then check them against existing CI outcomes. For an explicit CI pilot, export a compact file selection; CI needs no Jev call.
 
-The source interface works across languages and text-based test frameworks. The default workflow needs no generated description catalog or separate graph. An opt-in [dependency baseline](docs/dependencies.md) reuses source relationships and Behat/Playwright runtime observations to retain known affected tests without Jev scoring. The agent skill and Python CLI use the same engine; CI consumes published file selections without an agent session.
+The default graph workflow reuses source relationships and validated Behat/Playwright runtime observations. Reports distinguish positive paths, mandatory rules and unresolved tests; no missing path authorizes an omission. Explicit `assess --jev` adds Noul scoring for unresolved tests. The agent skill and Python CLI use the same engine; CI consumes published file selections without an agent session.
 
 Required tests and uncertain assessments stay RUN. Relevance is not a failure probability or a guarantee of preserved coverage. A smaller selection only becomes useful evidence once you check what it detects and misses.
 
@@ -49,11 +50,11 @@ Install the self-contained skill (Git, Python 3.10+, and npm for the installer):
 npx skills add https://github.com/ronaldtebrake/faultline --skill faultline --global
 ```
 
-Follow [setup and API-key steps](docs/install.md), then ask your agent:
+Follow [installation and configuration](docs/install.md), then ask your agent:
 
-> Use Faultline to assess this PR. Start with the diff and collect only missing implementation evidence. Show the expected Jev work and keep total Jev usage below $0.90, including retries. Save a shareable HTML report with 10%, 25%, and 50% relevance comparisons. Do not run tests or change CI.
+> Use Faultline to assess this PR with the dependency graph. Show affected paths, mandatory rules, unresolved tests and cache reuse. Keep full CI running and save an offline HTML report.
 
-Each new assessment is fresh by default. Paid progress stays in one journal per run; cross-run answer reuse is optional. The HTML report works offline, without JavaScript. [See a synthetic sample](docs/demo/report.html).
+`assess` and `select` need no API key. Graph facts reuse unchanged Git objects automatically. Optional Jev research requires `--jev`, including when resuming a paid run; [commands](docs/commands.md) explains the separate contracts and budgets.
 
 - [Architecture](docs/architecture.md): what runs where and what gets stored.
 - [Commands](docs/commands.md): setup, assess, resume, and report.
@@ -62,9 +63,9 @@ Each new assessment is fresh by default. Paid progress stays in one journal per 
 - [Anonymized comparison](docs/evaluation/selector-comparison.md): the earlier evidence behind the Jev-only direction.
 - [Performance milestone](docs/evaluation/jev-performance.md): fresh-call experiments, measured costs, and what is still experimental.
 
-## Optional GitHub CI
+## Optional selective GitHub CI experiment
 
-Prepare once before pushing; CI consumes the decision immediately or runs fully. Keep existing required checks during this experimental pilot.
+The default [source-baseline workflow](skills/faultline/assets/faultline-graph.yml) reports graph impact alongside full CI. Graph reports cannot be exported as selections. The separate workflow below requires explicit adoption; it is not the graph-validation default.
 
 ```mermaid
 flowchart LR

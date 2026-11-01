@@ -16,17 +16,19 @@ def add_commands(commands):
     context.add_argument('--compact', action='store_true', help='Experimental compact source labels; preserve exact source and full local provenance')
     cache = commands.add_parser('cache', help='Maintain local Jev answer storage')
     cache.add_argument('cache_action', choices=['compact'], help='Migrate verified legacy JSON answers to SQLite and remove their old cache files')
-    select = commands.add_parser('select', help='Save a Jev would-run report without executing tests')
+    select = commands.add_parser('select', help='Save an offline graph report; keeps full CI execution')
+    select.add_argument('--jev', action='store_true', help='Explicitly enable legacy paid Jev selection')
     select.add_argument('--base', required=True, help='Actual PR/MR diff base; use a merge-base if required by your host')
     select.add_argument('--head', default='HEAD')
     select.add_argument('--id', help='PR/MR identifier for reports, excluded from inference inputs')
     select.add_argument('--max-requests', type=int, help='Per-invocation Jev request cap including retries; does not edit configuration')
     select.add_argument('--selection-seconds', type=float, help='Per-invocation inference time limit')
-    select.add_argument('--prepare', action='store_true', help='Read exact Git sources and estimate Jev work without contacting Jev')
-    select.add_argument('--dry-run', action='store_true', help='Inspect cached evidence and request estimates; no indexing or API calls')
+    select.add_argument('--prepare', action='store_true', help='Inspect the graph offline; with --jev, estimate scoring without contacting Jev')
+    select.add_argument('--dry-run', action='store_true', help='Prepare without freezing a report or calling Jev; graph facts may be cached')
     select.add_argument('--native', action='store_true', help='Opt into runner discovery in a prepared application environment')
     select.add_argument('--output', type=Path)
     benchmark = commands.add_parser('benchmark', help='Freeze Jev proposals without running tests')
+    benchmark.add_argument('--jev', action='store_true', help='Explicitly enable paid Jev research; required unless --prepare')
     benchmark.add_argument('--evidence-mode', choices=['adaptive', 'source', 'whole', 'file-pairs'], default='adaptive', help='Whole inputs with explicit lossless window fallback (default), strict source reference, full setup, or changed-file windows')
     benchmark.add_argument('--base', required=True)
     benchmark.add_argument('--head', default='HEAD')
@@ -41,6 +43,7 @@ def add_commands(commands):
     benchmark.add_argument('--max-batch-bytes', type=int, help='Local byte guard for the complete request')
     benchmark.add_argument('--output', type=Path)
     recovery = commands.add_parser('benchmark-recover', help='Reassess only unresolved source targets; preserve accepted judgments and freeze a new case')
+    recovery.add_argument('--jev', action='store_true', help='Explicitly enable paid Jev research; required unless --prepare')
     recovery.add_argument('--benchmark', type=Path, required=True)
     recovery.add_argument('--prepare', action='store_true', help='Plan bounded evidence windows and cached work without API calls')
     recovery.add_argument('--max-requests', type=int, help='Total new HTTP attempts including retries')
@@ -97,6 +100,8 @@ def dispatch(store, args):
             setattr(args, name, (store.root / value).resolve())
     if hasattr(args, 'prerequisite'):
         args.prerequisite = [(store.root / p).resolve() for p in args.prerequisite]
+    if args.command in ('benchmark', 'benchmark-recover') and not args.prepare and not args.jev:
+        raise FaultlineError('Jev is off by default; pass --jev to enable scoring, or --prepare for an offline estimate')
     if args.command == 'cache':
         from .cache import AnswerCache
         return AnswerCache(store).compact()
@@ -122,6 +127,12 @@ def dispatch(store, args):
         from .benchmark import render
         return render(args.benchmark, pricing=read_json(args.pricing) if args.pricing else None, output=args.output, format=args.format, report_url=args.report_url, compare_policies=args.compare_policies, relevance_thresholds=args.relevance_thresholds, file_budgets=args.file_budgets)
     if args.command == 'select':
+        if not args.jev:
+            if args.native or args.max_requests is not None or args.selection_seconds is not None:
+                raise FaultlineError('Default graph selection is offline; native discovery and scoring options require explicit --jev')
+            from .graph_assessment import assess as graph_assess
+            return graph_assess(store, base=args.base, head=args.head, identifier=args.id, output=args.output,
+                                prepare=args.prepare or args.dry_run)
         from .selection import select
         return select(store, args.base, args.head, identifier=args.id, output=args.output, dry_run=args.dry_run,
                       native=args.native, max_requests=args.max_requests, selection_seconds=args.selection_seconds, prepare=args.prepare)

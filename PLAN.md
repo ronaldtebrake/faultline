@@ -1,11 +1,18 @@
 # Validation plan
 
-Faultline can discover configured test source, accept verified context, obtain Jev judgments, recover incomplete scoring, and report proposals. The next goal is to establish whether those proposals retain useful regression detection at a worthwhile cost.
+## Current direction: graph default, Jev optional and off
 
-Longer-term validation goal: maintain a reusable dependency baseline that reduces
-repeated Jev work, particularly for Behat and Playwright. Combine source analysis
-with evidence from existing full CI runs. Track the implemented layer and remaining
-requirements in [dependency graph development](docs/dependencies.md).
+The primary assessment path is the source/runtime dependency graph. `assess` and `select` run without inference; explicit `--jev` enables optional scoring, including resumes. Missing paths stay unresolved and cannot authorize omissions. Keep full consumer CI running while testing graph behavior and caching.
+
+1. Implement and verify offline defaults, explicit paid opt-in, readable affected paths and frozen reports. Preserve mandatory rules, unknown-input fallbacks and existing execution guards.
+2. Install the pinned package in a new throwaway consumer draft PR, without vendoring the engine. Restore and publish shared source baselines while normal test matrices run fully.
+3. Create a stacked draft branch with controlled source/test changes. Freeze predictions before outcomes; compare incremental stack impact and cumulative main-branch impact. Verify cold/warm restoration, unchanged-fact reuse and changed-input invalidation.
+4. Compare predictions against complete native CI outcomes and existing runtime observations. Classify failures as change-caused regressions, flakes, infrastructure or unknown. Keep attempt/shard identities and runtime coverage gaps visible.
+5. Only consider test skipping after held-out regression evidence and a separate adoption decision. No automatic promotion from graph reachability, model relevance or cache reuse.
+
+All consumer experiment PR titles contain `[WIP] DONT MERGE`; close them after validation. The earlier two-case probe is historical cache evidence, not permission to reduce the full test matrices in this new experiment. Private source, reports and run identifiers remain in the consumer workspace.
+
+The completed historical with/without-Jev study did not demonstrate incremental regression-detection value from Jev. Observed unrelated failures are not automatically missed regressions. Keep Jev available for later controlled research; do not spend on it during this graph-validation milestone. Full-suite coverage, regression recall and CI savings remain unproven.
 
 ## Installation and inspection objective: verified preview, 2026-11-01
 
@@ -46,7 +53,7 @@ passes. Preview installation and the consumer template pin that corrected engine
 The consumer draft used for earlier validation was found closed and was left
 closed. Further installation verification runs in Faultline's own repository.
 
-## Current milestone: validate shared CI baseline reuse
+## Completed controlled milestone: shared CI baseline reuse
 
 Pilot scope update: the user authorized fixed, smaller test probes in the
 throwaway consumer PR to obtain cache evidence faster. The initial broad run

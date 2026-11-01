@@ -4,13 +4,13 @@ name: Faultline installation and graph self-test
 on:
   pull_request:
   push:
-    branches: [codex/reusable-ci-setup]
+    branches: [codex/graph-default]
 permissions:
   contents: read
   actions: read
 jobs:
   graph:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/codex/reusable-ci-setup'
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/codex/graph-default'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -23,13 +23,17 @@ jobs:
         with:
           python-version: '3.12'
       - uses: ./actions/setup
+      - name: Verify offline defaults and paid opt-in boundaries
+        env:
+          PYTHONPATH: skills/faultline/scripts:tests
+        run: python3 -m unittest test_graph_assessment -q
       - name: Configure the committed synthetic source fixture
         run: cp .github/faultline-fixture.json faultline.json
       - name: Restore a trusted ancestor baseline
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          TRUSTED_BRANCH: codex/reusable-ci-setup
+          TRUSTED_BRANCH: codex/graph-default
         run: |
           mkdir -p .faultline/ci-graph
           "$FAULTLINE_CLI" graph baseline fetch --repository "$REPOSITORY" \
@@ -79,7 +83,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           base=$(git merge-base "$BASE_SHA" HEAD)
-          "$FAULTLINE_CLI" graph compare --base "$base" --head HEAD > .faultline/ci-graph/impact.json
+          "$FAULTLINE_CLI" assess --base "$base" --head HEAD > .faultline/ci-graph/impact.json
       - name: Package source facts from the default branch
         if: github.event_name == 'push'
         env:
