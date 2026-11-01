@@ -9,7 +9,7 @@ from .tia.cli import add_commands, dispatch
 
 
 def parser():
-    cli = argparse.ArgumentParser(prog='faultline', description='Assess test impact with Jev')
+    cli = argparse.ArgumentParser(prog='faultline', description='Assess test impact with an offline dependency graph; Jev is optional and off by default')
     cli.add_argument('--root', default='.', help='Target repository (defaults to the current Git root)')
     cli.add_argument('--version', action='version', version=f'faultline {__version__}')
     commands = cli.add_subparsers(dest='command', required=True)

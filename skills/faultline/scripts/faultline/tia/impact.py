@@ -217,7 +217,7 @@ def assess(store, *, base=None, head='HEAD', identifier=None, title='', descript
                 if argument is None:
                     limits[key] = progress.noul_limits[key]
         progress.append('noul_limits', limits)
-        print(f'Faultline Noul run {run_id}; resume with assess --resume {run_id}', file=sys.stderr)
+        print(f'Faultline Noul run {run_id}; resume with assess --jev --resume {run_id}', file=sys.stderr)
         # Inputs and any explicitly opted-in relationship cache hits were frozen
         # before dispatch. Impact scores never reuse another change's answers.
         scoring = time.monotonic()

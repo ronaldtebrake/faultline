@@ -193,7 +193,7 @@ class BenchmarkTests(unittest.TestCase):
     def test_cli_reference_preflight_and_partial_exit_codes(self):
         with patch('builtins.print'), patch('faultline.tia.batch.api_key', side_effect=AssertionError('No inference allowed')):
             self.assertEqual(0, main(['--root', str(self.root), 'benchmark', '--base', self.base, '--prepare']))
-            self.assertEqual(2, main(['--root', str(self.root), 'benchmark', '--base', self.base, '--max-requests', '0', '--title', 'Pre-outcome intent']))
+            self.assertEqual(2, main(['--root', str(self.root), 'benchmark', '--jev', '--base', self.base, '--max-requests', '0', '--title', 'Pre-outcome intent']))
         case = checked(next((self.store.path / 'benchmarks').glob('*.json')))
         self.assertEqual('Pre-outcome intent', case['change']['title'])
         self.assertEqual(0, case['usage']['requests'])

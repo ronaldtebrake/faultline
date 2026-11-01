@@ -83,9 +83,9 @@ The maximum is 32 MiB of combined evidence. Oversized, invalid, binary, or missi
 ```bash
 faultline context --base <diff-base> --head <tested-head> \
   --input .faultline/context-manifest.json --output .faultline/context/pr-context.json
-faultline benchmark --base <diff-base> --head <tested-head> \
+faultline benchmark --jev --base <diff-base> --head <tested-head> \
   --context .faultline/context/pr-context.json --prepare --max-requests 100
-faultline benchmark --base <diff-base> --head <tested-head> \
+faultline benchmark --jev --base <diff-base> --head <tested-head> \
   --context .faultline/context/pr-context.json --max-requests 100 --selection-seconds 120
 ```
 

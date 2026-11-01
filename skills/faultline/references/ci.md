@@ -7,8 +7,8 @@ The agent assesses the change. CI consumes a small file selection and makes no J
 Use the cumulative merge base and exact revision CI will execute. Faultline's automatic PR template tests the exact PR head; existing required merge checks remain in place. Refresh the assessment when its head, merge base, target or reviewed configuration changes.
 
 ```bash
-faultline assess --evaluator noul-v1 --base <base> --head <tested-revision> --prepare
-faultline assess --evaluator noul-v1 --base <base> --head <tested-revision> --max-cost 0.50
+faultline assess --jev --evaluator noul-v1 --base <base> --head <tested-revision> --prepare
+faultline assess --jev --evaluator noul-v1 --base <base> --head <tested-revision> --max-cost 0.50
 faultline export-selection --run <run-id> --threshold 0.50 --output .faultline/selection.json
 ```
 

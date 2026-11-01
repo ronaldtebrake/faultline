@@ -1,16 +1,14 @@
-# Self-test of the consumer source-baseline template using committed synthetic files.
-# This experimental branch is an explicit trust source; consumers use their default branch.
+# Exercise the packaged consumer integration against committed synthetic source.
 name: Faultline installation and graph self-test
 on:
   pull_request:
   push:
-    branches: [codex/reusable-ci-setup]
+    branches: [codex/graph-default]
 permissions:
   contents: read
   actions: read
 jobs:
   graph:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/codex/reusable-ci-setup'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -22,97 +20,14 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - uses: ./actions/setup
+      - name: Verify offline defaults and packaged CI behavior
+        env:
+          PYTHONPATH: skills/faultline/scripts:tests
+        run: python3 -m unittest test_graph_assessment test_graph_ci -q
       - name: Configure the committed synthetic source fixture
         run: cp .github/faultline-fixture.json faultline.json
-      - name: Restore a trusted ancestor baseline
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          TRUSTED_BRANCH: codex/reusable-ci-setup
-        run: |
-          mkdir -p .faultline/ci-graph
-          "$FAULTLINE_CLI" graph baseline fetch --repository "$REPOSITORY" \
-            --workflow faultline-graph.yml --branch "$TRUSTED_BRANCH" \
-            --output "$RUNNER_TEMP/faultline-baseline.json" > .faultline/ci-graph/restore.json
-      - name: Build readable source graph
-        run: |
-          "$FAULTLINE_CLI" init
-          "$FAULTLINE_CLI" graph build --output .faultline/ci-graph/graph.json > .faultline/ci-graph/build.json
-      - name: Verify installed CLI and actual cache behavior
-        run: |
-          "$FAULTLINE_CLI" graph affected --file .github/fixtures/price.ts \
-            --output .faultline/ci-graph/query.json > /dev/null
-          python3 - <<'PYTHON'
-          import json
-          from pathlib import Path
-          root = Path('.faultline/ci-graph')
-          restored = json.loads((root / 'restore.json').read_text())
-          built = json.loads((root / 'build.json').read_text())
-          query = json.loads((root / 'query.json').read_text())
-          expected = json.loads(Path('.github/faultline-probe.json').read_text())
-          key = 'fixture:default:.github/fixtures/impact.spec.ts'
-          assert query['kind'] == 'dependency-impact' and query['schema_version'] == 1
-          assert query['affected'] == [key], query
-          assert query['explanations'][key][0]['path'] == ['.github/fixtures/impact.spec.ts', '.github/fixtures/price.ts']
-          assert query['jev_requests'] == 0 and query['omission_authorized'] is False
-          if expected['phase'] == 'warm':
-              assert restored['restored'] is True, restored
-              assert built['parsed'] == 1, built['parsed']
-              assert built['reused'] > 0, built['reused']
-          elif expected['phase'] == 'cold':
-              assert built['parsed'] > 0, built['parsed']
-          else:
-              assert expected['phase'] == 'auto'
-              if restored['restored']:
-                  assert built['reused'] > 0, built['reused']
-              else:
-                  assert built['parsed'] > 0, built['parsed']
-          print(json.dumps({'verified': True, 'phase': expected['phase'],
-                            'restored': restored['restored'], 'parsed': built['parsed'],
-                            'reused': built['reused'], 'explained_targets': len(query['affected']),
-                            'jev_requests': 0}))
-          PYTHON
-      - name: Explain actual PR changes
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          base=$(git merge-base "$BASE_SHA" HEAD)
-          "$FAULTLINE_CLI" graph compare --base "$base" --head HEAD > .faultline/ci-graph/impact.json
-      - name: Package source facts from the default branch
-        if: github.event_name == 'push'
-        env:
-          REPOSITORY: ${{ github.repository }}
-          REPOSITORY_ID: ${{ github.repository_id }}
-        run: |
-          python3 - <<'PYTHON'
-          import json, os
-          from pathlib import Path
-          value = {'repository': os.environ['REPOSITORY'].lower(),
-                   'repository_id': int(os.environ['REPOSITORY_ID']),
-                   'workflow': 'faultline-graph.yml', 'revision': os.environ['GITHUB_SHA'],
-                   'run_id': int(os.environ['GITHUB_RUN_ID']),
-                   'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
-                   'event': 'push', 'branch': os.environ['GITHUB_REF_NAME'], 'collections': []}
-          (Path(os.environ['RUNNER_TEMP']) / 'faultline-producer.json').write_text(json.dumps(value))
-          PYTHON
-          "$FAULTLINE_CLI" graph baseline pack --producer "$RUNNER_TEMP/faultline-producer.json" \
-            --output .faultline/baseline.json > .faultline/ci-graph/package.json
-      - uses: actions/upload-artifact@v6
-        if: github.event_name == 'push'
+      - uses: ./actions/graph
         with:
-          name: faultline-baseline-v1
-          path: .faultline/baseline.json
-          include-hidden-files: true
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 14
-      - uses: actions/upload-artifact@v6
-        if: ${{ !cancelled() }}
-        with:
-          name: faultline-graph-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .faultline/ci-graph/
-          include-hidden-files: true
-          if-no-files-found: warn
-          retention-days: 14
+          base-ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          trusted-branch: codex/graph-default
+          publish-baseline: ${{ github.event_name == 'push' }}

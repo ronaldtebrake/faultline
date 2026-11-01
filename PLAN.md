@@ -1,11 +1,59 @@
 # Validation plan
 
-Faultline can discover configured test source, accept verified context, obtain Jev judgments, recover incomplete scoring, and report proposals. The next goal is to establish whether those proposals retain useful regression detection at a worthwhile cost.
+## Current direction: graph default, Jev optional and off
 
-Longer-term validation goal: maintain a reusable dependency baseline that reduces
-repeated Jev work, particularly for Behat and Playwright. Combine source analysis
-with evidence from existing full CI runs. Track the implemented layer and remaining
-requirements in [dependency graph development](docs/dependencies.md).
+The primary assessment path is the source/runtime dependency graph. `assess` and `select` run without inference; explicit `--jev` enables optional scoring, including resumes. Missing paths stay unresolved and cannot authorize omissions. Keep full consumer CI running while testing graph behavior and caching.
+
+1. Implement and verify offline defaults, explicit paid opt-in, readable affected paths and frozen reports. Preserve mandatory rules, unknown-input fallbacks and existing execution guards.
+2. Install the pinned package in a new throwaway consumer draft PR, without vendoring the engine. Restore and publish shared source baselines while normal test matrices run fully.
+3. Create a stacked draft branch with controlled source/test changes. Freeze predictions before outcomes; compare incremental stack impact and cumulative main-branch impact. Verify cold/warm restoration, unchanged-fact reuse and changed-input invalidation.
+4. Compare predictions against complete native CI outcomes and existing runtime observations. Classify failures as change-caused regressions, flakes, infrastructure or unknown. Keep attempt/shard identities and runtime coverage gaps visible.
+5. Only consider test skipping after held-out regression evidence and a separate adoption decision. No automatic promotion from graph reachability, model relevance or cache reuse.
+
+All consumer experiment PR titles contain `[WIP] DONT MERGE`; close them after validation. The earlier two-case probe is historical cache evidence, not permission to reduce the full test matrices in this new experiment. Private source, reports and run identifiers remain in the consumer workspace.
+
+The completed historical with/without-Jev study did not demonstrate incremental regression-detection value from Jev. Observed unrelated failures are not automatically missed regressions. Keep Jev available for later controlled research; do not spend on it during this graph-validation milestone. Full-suite coverage, regression recall and CI savings remain unproven.
+
+Implementation verified on 2026-11-01: the exact published engine tree passes 192 tests (two optional native checks skipped). New checks cover zero inference with credentials present, explicit paid opt-in and resume, transitive/deleted paths, mandatory rules, warm parsing, and rejection of graph reports as selective manifests. Workflow Actionlint passes. The private consumer cold/warm graph jobs also pass: the descendant restores the trusted ancestor baseline, reparses two controlled changes, reuses unchanged facts and reports the expected paths with zero Jev calls. Full consumer CI remains running with its original matrices and commands; its complete outcomes and runtime coverage are still pending. No omission policy is enabled.
+
+Consumer integration implemented and locally verified (197 tests, two optional native checks skipped): move CI orchestration and experiment assertions into `faultline graph ci` and the pinned `actions/graph` action. Display would-run targets, reasons and dependency paths in the job summary, with complete artifacts. The separate consumer new-file stack now passes live CI: it restores the packaged baseline, discovers a new helper and test through unchanged configuration, verifies paths to existing tests, and publishes a larger source baseline. Job summaries and frozen artifacts expose would-run targets. Original full-CI heads/runs remain intact. Their checked-out merge trees match the predicted heads; complete changed-branch test outcomes remain pending, so no missed-regression rate is claimed.
+
+Next controlled regression check: start with an integration-only baseline from
+the consumer's main branch. Add a new test and deliberately change production
+behavior that an unchanged main-branch test already covers. Freeze the graph
+prediction before running tests; verify the exact affected sources, the unchanged
+existing test blobs, and an unrelated configured test as a negative control.
+Use native tests to establish passing control and failing-change outcomes, while
+retaining all normal CI matrices. Keep the intentional regression isolated in a
+throwaway draft PR. This is a designed sensitivity check, not held-out recall.
+
+The package controls pass 199 checks in the exact published tree (two optional
+native checks skipped), and its installation self-test passes in live CI. The
+fresh consumer baseline producer and its descendant graph CI both pass. The
+descendant asserts remote restoration, exactly two changed/added parsed sources,
+at least 6,000 reused facts, new-target discovery, exact affected sources and
+unchanged existing test blobs; configuration is unchanged. Local native control runs validate
+the designed regression: the main module passes, the changed module has exactly
+the new and unchanged expected assertion failures, and restoring production
+behavior while keeping the new test passes again. The frozen graph retains both
+failing files, retains a passing mocked consumer conservatively, and leaves the
+unrelated passing control unresolved. Full remote CI and general recall remain
+separate; no skipping or Jev calls are enabled.
+
+
+Two further reference examples now copy pinned snapshots of open consumer PRs
+onto a clean integration baseline, then stack the copies. Verify identical
+patch bytes and changed-file blobs, preserve the original PRs, and show original,
+incremental-copy and combined-stack predictions before inspecting copy outcomes.
+The original and copied revisions retain the same affected source sets. One
+example retains an existing test and a new test through production dependencies;
+the other retains only a newly added test, with no resolved path from its changed
+production classes. Surface that gap in the review instead of interpreting a
+small candidate set as sufficient coverage. Keep full native CI enabled and
+Jev off. Private references, source paths, summaries and artifacts stay with the
+consumer experiment; update the at-a-glance comparison as CI evidence arrives. Both copied
+graph CI jobs passed remote parent-baseline restoration and reuse checks. Full
+native QA remains queued; no new recall or performance claim is established.
 
 ## Installation and inspection objective: verified preview, 2026-11-01
 
@@ -46,7 +94,7 @@ passes. Preview installation and the consumer template pin that corrected engine
 The consumer draft used for earlier validation was found closed and was left
 closed. Further installation verification runs in Faultline's own repository.
 
-## Current milestone: validate shared CI baseline reuse
+## Completed controlled milestone: shared CI baseline reuse
 
 Pilot scope update: the user authorized fixed, smaller test probes in the
 throwaway consumer PR to obtain cache evidence faster. The initial broad run

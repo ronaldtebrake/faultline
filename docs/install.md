@@ -14,15 +14,15 @@ npx skills add https://github.com/ronaldtebrake/faultline --skill faultline --gl
 Select your agent and start a new session. The skill includes its Python engine: no separate pip install, database service, or second skill is needed. Private repositories require authenticated Git access.
 
 The new installation/graph workflow is currently available on the experimental
-`codex/reusable-ci-setup` branch. To use its reviewed snapshot before it reaches
+`codex/graph-default` branch. To use its reviewed snapshot before it reaches
 the default branch:
 
 ```sh
-npx skills add https://github.com/ronaldtebrake/faultline/tree/103a0cda8d0f4ada5eb37f8a52911261f3959628/skills/faultline --skill faultline --global
+npx skills add https://github.com/ronaldtebrake/faultline/tree/e3ebb6fdd9c0166df1ba4558ef5349418778f406/skills/faultline --skill faultline --global
 ```
 
 For the matching CLI dependency, append
-`@103a0cda8d0f4ada5eb37f8a52911261f3959628` to the Git package URL below.
+`@e3ebb6fdd9c0166df1ba4558ef5349418778f406` to the Git package URL below.
 This is a commit-pinned preview, not a new tagged release. Project-scoped skill
 installation is also possible, but keep the installed engine ignored instead of
 vendoring it into the application. Commit configuration and dependency pins.
@@ -33,7 +33,9 @@ Ask your agent:
 
 The agent saves `faultline.json`. Review and commit it so teammates reuse the setup. Empty suites and unsupported test conventions need attention; filename suggestions are not proof of a complete inventory.
 
-Add your key to the ignored `.faultline/.env` created during setup:
+The default graph assessment needs no key. Run `faultline assess --base <merge-base>` and keep full CI running while validating its paths and unresolved tests.
+
+Only for explicitly requested Jev scoring, add your key to the ignored `.faultline/.env` created during setup:
 
 ```dotenv
 TYPESAFE_API_KEY="your-key"
@@ -45,7 +47,7 @@ Then ask:
 
 > Use Faultline to assess this PR. Start with the diff and collect only missing implementation evidence. Prepare offline, keep Jev spending below $0.90 including retries, and give me the HTML report with 10/25/50% comparisons. Do not run tests.
 
-The agent resolves the PR's original base and head, checks the work estimate, and invokes `assess`. The result includes a shareable HTML file and a run ID for recovery. Context investigation remains agent work and is costed separately.
+For this explicit paid request, the agent resolves the PR's original base and head, checks the work estimate, and invokes `assess --jev`. The result includes a shareable HTML file and a run ID for recovery. Context investigation remains agent work and is costed separately.
 
 ## Terminal or CI
 
@@ -110,3 +112,5 @@ npx skills add typesafe-ai/skills --skill typesafe-ai
 ```
 
 Routine Faultline users do not need it. If TLS verification fails, repair Python's trust store or use an approved `SSL_CERT_FILE`/`SSL_CERT_DIR`; optional `certifi` is supported. Never disable verification.
+
+The pinned `actions/graph` integration installs Faultline and owns baseline restoration, validation, would-run summaries and artifacts. Consumer repositories need only configuration and workflow wiring; no verification or metadata scripts. See [the workflow template](../skills/faultline/assets/faultline-graph.yml).

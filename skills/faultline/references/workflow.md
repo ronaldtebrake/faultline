@@ -36,10 +36,10 @@ Runner names and commands are optional for source analysis. PHPUnit and Behat ha
 ```bash
 faultline init --revision HEAD
 faultline discover --revision <tested-head>
-faultline benchmark --base <cumulative-base> --head <tested-head> --prepare
+faultline benchmark --jev --base <cumulative-base> --head <tested-head> --prepare
 ```
 
-Discovery only enumerates configured files. It cannot prove that configuration covers every executable test. An empty suite remains incomplete. For new analyses use [benchmark](benchmark.md), which supports adaptive windows and recovery. `select --base … --head …` remains the selection-receipt workflow used by explicit full-suite evaluations; `--prepare` and `--dry-run` estimate it offline.
+Discovery only enumerates configured files. It cannot prove that configuration covers every executable test. An empty suite remains incomplete. For new analyses use `assess --base <base>`, which defaults to the offline graph. [Benchmark](benchmark.md) is a separate optional Jev research workflow. `select` also defaults to a graph report; `select --jev` retains the legacy selection-receipt workflow. `--prepare` and `--dry-run` remain offline.
 
 For source context beyond the diff and test, the agent follows [context gathering](context.md) and supplies `benchmark --context <bundle>`. This works for ordinary edits and dependency updates. The CLI verifies and scores the supplied evidence; it does not investigate integration paths automatically.
 
@@ -53,7 +53,7 @@ Preparation makes no Jev calls. Live runs have one request ceiling (including re
 
 ## Optional native validation and execution
 
-Native discovery may require a working application; use `discover --native` or `select --native` only when explicitly requested in a prepared environment. It enriches file identities and never removes source candidates on failure.
+Native discovery may require a working application; use `discover --native` or `select --jev --native` only when explicitly requested in a prepared environment. It enriches file identities and never removes source candidates on failure.
 
 ```bash
 faultline run --selection <selection.json> --suite <suite:variant>

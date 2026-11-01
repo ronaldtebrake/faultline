@@ -7,10 +7,28 @@ this milestone.
 
 For first-time installation, use the skill's [installation workflow](../skills/faultline/references/install.md)
 and [source graph template](../skills/faultline/assets/faultline-graph.yml). It uses
-the commit-pinned setup action, publishes source parser facts on default-branch
+the commit-pinned `actions/graph` action, which installs Faultline, restores source facts, writes a would-run job summary, and publishes source parser facts on default-branch
 pushes and reports PR impact without changing existing test jobs. This initial
 template contains no runtime observations; extend collection alongside existing
-full runs when needed. The package and JSON CLI are the integration boundary.
+full runs when needed. The package and JSON CLI are the integration boundary. Consumers need configuration and CI wiring, with no Python verification, producer-metadata or report-copy helpers. `actions/setup` remains available for installation alone.
+
+`faultline.json` describes the scope and test suites; it is not the baseline.
+The report artifact's `graph.json` contains a node for every tracked file, known
+dependency edges and configured test targets. Nodes alone do not establish
+complete dependency coverage. The separate `baseline.json` artifact carries
+reusable parser facts from a trusted ancestor. A descendant reuses unchanged
+facts, parses changed or added sources, and resolves a fresh graph for its tree.
+New tests matching the configured source patterns are discovered automatically.
+
+For controlled experiments, the optional action `expectations` JSON can assert
+`exact_affected` source paths, configured `unresolved` controls, and
+`unchanged_tests: {"revision": "<full commit SHA>", "sources": ["tests/ExistingTest.php"]}`.
+The last check compares Git blobs with the pinned revision, so changing the test
+cannot masquerade as retaining an existing test through a dependency path.
+The package checks these controls and writes their result into the job summary
+and artifact. An unresolved control still runs in full CI; it is not permission
+to skip it. When comparing a stack, the incremental prediction appears first,
+with the cumulative integration diff below it.
 
 `faultline graph baseline pack --producer producer.json --runtime runtime.json
 --output baseline.json` creates a portable bundle containing parser facts and
@@ -47,6 +65,10 @@ from the current run before measuring reuse.
 Local `graph baseline restore --input baseline.json` assumes the caller already
 trusts the producer. A checksum alone does not authenticate a producer. Never
 restore arbitrary PR-uploaded evidence as a trusted production baseline.
+
+## Optional selective execution experiment
+
+The following is separate from graph validation and requires explicit adoption.
 
 # Prepare before pushing; execute in CI
 

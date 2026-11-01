@@ -297,9 +297,13 @@ def compare(base, head):
     old_edges = {digest(e) for e in base['edges']}
     new_edges = {digest(e) for e in head['edges']}
     return {'base': base['revision'], 'head': head['revision'], 'changed_files': changed,
+            'added_files': sorted(head['nodes'].keys() - base['nodes'].keys()),
+            'removed_files': sorted(base['nodes'].keys() - head['nodes'].keys()),
+            'added_targets': sorted(head['targets'].keys() - base['targets'].keys()),
+            'removed_targets': sorted(base['targets'].keys() - head['targets'].keys()),
             'affected': sorted(affected), 'unresolved': sorted(unresolved), 'affected_inputs': paths,
             'added_edges': len(new_edges - old_edges), 'removed_edges': len(old_edges - new_edges),
             'runtime_reuse': {'base': base['runtime_reuse'], 'head': head['runtime_reuse']},
             'execution': 'none', 'jev_requests': 0,
             'omission_authorized': False,
-            'next': 'Retain affected tests; resolve remaining tests with semantic or complete dependency evidence.'}
+            'next': 'Keep full CI running while validating affected and unresolved tests against full-run evidence.'}

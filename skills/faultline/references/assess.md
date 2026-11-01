@@ -1,34 +1,27 @@
 # Setup, assess, report
 
-Use `python3 "<this-skill>/scripts/run.py" --root "<repo>"` before the commands below. The bundled engine needs Python 3.10+ and Git; no pip install or separate skill is required.
+Use the installed `faultline` CLI, or `python3 "<this-skill>/scripts/run.py" --root "<repo>"`.
 
-1. Run `setup`. If configuration is missing, review its candidate paths and inspect the repository's runner configuration for missing conventions. Save reviewed sources with `setup --source '<glob>' --scope '<glob>'`; repeat either option as needed. For multiple suites or variants, create `faultline.json` using [configuration](workflow.md). Existing configuration is only validated. Confirm the inventory with the user when its scope is ambiguous.
-2. The user enters `TYPESAFE_API_KEY` locally in `.faultline/.env`, the environment, or root `.env`. Never print or request the key. Setup reports presence, not API validity.
-3. Resolve the cumulative base and exact PR/MR head using existing Git/hosting tools. Keep the current checkout unchanged. For merged PRs, use original revisions rather than today's main. Inspect the diff; load [context gathering](context.md) only if changed behavior is missing. Freeze a bundle before scoring; do not send whole investigation transcripts.
-4. Prepare offline:
+1. Run `setup`, review the source suggestions and save the actual test paths with `setup --source '<glob>' --scope '<glob>'`. For multiple suites use [configuration](workflow.md). Existing configuration is validated without being overwritten.
+2. Resolve the cumulative PR merge base and exact committed head. Analysis reads Git objects, not uncommitted edits.
+3. Run `assess --base <base> --head <head>`. This defaults to `graph-v1`, uses no credentials and makes no Jev calls. Add `--runtime <validated-observations.json>` to include existing CI evidence. Source facts are reused automatically. `--prepare` inspects the same graph without freezing a report.
+4. Return the run ID, HTML and frozen JSON paths. Explain affected paths, mandatory rules and unresolved tests. The full suite remains required: missing paths do not establish independence.
+5. Use `report --run <id> --output <basename>` to regenerate HTML, Markdown and CSV offline. `assess --resume <graph-run-id>` reopens the original frozen report. A new assessment uses the current revisions and configuration.
 
-   ```bash
-   assess --base <base> --head <head> --prepare --max-requests <allowance>
-   ```
+`select --base <base>` also defaults to a graph report. Graph reports are not executable selection manifests; `export-selection` rejects them. Keep full CI running throughout validation.
 
-   Include the same `--context <bundle>` in both commands when needed. Review eligible targets, blockers and the estimate against the user's spending allowance. Apply [the budget arithmetic](benchmark.md#spending-budget); this engine enforces HTTP attempts, not a dollar limit.
+## Optional paid Jev assessment
 
-5. Score and export:
+Only when requested within an authorized budget, follow [context gathering](context.md), [Jev guidance](jev.md) and [budget arithmetic](benchmark.md#spending-budget). The user enters a key locally; never request or display it.
 
-   ```bash
-   assess --base <base> --head <head> --id <display-name> --fresh \
-     --max-requests <allowance> --selection-seconds <seconds>
-   ```
+```sh
+faultline assess --jev --base <base> --head <head> --prepare --max-cost 0.50
+faultline assess --jev --base <base> --head <head> --max-cost 0.50
+faultline assess --jev --resume <run-id>
+```
 
-   It saves a single-file HTML report with 10/25/50% tabs plus JSON, Markdown and CSV. Report the returned paths and run ID. Analysis runs no tests. Valid answers are saved immediately; uncertainty remains visible.
+Explicit `--jev` selects Noul with positive dependency retention. Unresolved tests remain eligible for scoring. Paid progress and spending limits survive resume. Supplying an evaluator, a key or a saved Jev run never substitutes for `--jev`. Configuration/context changes require a new run. Do not increase a spending limit without authorization.
 
-6. If interrupted or incomplete, use `assess --resume <run-id>`. Accepted answers and prior attempts survive restarts. The run-wide request allowance does not reset. Increase `--max-requests` only within an authorized remaining spending budget. Configuration, context and revision changes need a new run. Missing source or semantic gaps need better evidence, not retries.
-7. `report --run <run-id>` regenerates reports offline. `report --demo --output <path.html>` demonstrates the format with invented data and no credentials.
+Use `--jev --evaluator choice-v1` for the legacy Choice contract, with request limits and optional `--reuse-cache`. Its scores and thresholds are not interchangeable with Noul. `benchmark` and `benchmark-recover` also require `--jev` for inference; `--prepare` is offline.
 
-Each new assessment is fresh by default; `--fresh` is explicit. `--reuse-cache` permits an optional 64 MiB exact-input answer cache. Run evidence is separate and always retained. The report distinguishes newly accepted answers, recovered answers in this run, and reuse from other runs. Cache misses or cache failures never erase paid progress.
-
-The default evaluator uses five-level Choice probabilities and serial bounded transport. The opt-in Noul workflow is described below; its transport latency needs separate measurement. Compare relevance thresholds offline without changing or normalizing the stored probabilities.
-
-Engine-to-report time excludes installation, agent investigation and the final metadata export. Report unknown agent time/cost and missing API usage as unknown. Fewer selected files do not establish actual CI time saved, regression recall or coverage.
-
-For a compact executable CI selection, use explicit `--evaluator noul-v1`; follow [selective CI](ci.md). The default commands above remain the independent Choice workflow.
+Reports separate model proposals from measured outcomes. Agent investigation is outside the engine clock; missing API usage is unknown. Test counts alone do not establish regression recall or CI savings. Selective execution remains a separate, explicitly authorized [CI experiment](ci.md).

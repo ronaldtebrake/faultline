@@ -20,8 +20,8 @@ Commit first. Resolve the actual target branch from the existing PR or the inten
 ```bash
 git fetch origin
 # Resolve <merge-base> with: git merge-base origin/main HEAD
-faultline assess --evaluator noul-v1 --base <merge-base> --head HEAD --prepare --max-cost 0.50
-faultline assess --evaluator noul-v1 --base <merge-base> --head HEAD --max-cost 0.50
+faultline assess --jev --evaluator noul-v1 --base <merge-base> --head HEAD --prepare --max-cost 0.50
+faultline assess --jev --evaluator noul-v1 --base <merge-base> --head HEAD --max-cost 0.50
 faultline ci-submit --run <run-id> --threshold 0.50 \
   --target-branch main --repository owner/project
 ```
