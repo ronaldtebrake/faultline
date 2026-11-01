@@ -27,6 +27,16 @@ Use native tests to establish passing control and failing-change outcomes, while
 retaining all normal CI matrices. Keep the intentional regression isolated in a
 throwaway draft PR. This is a designed sensitivity check, not held-out recall.
 
+The package controls pass 199 checks in the exact published tree (two optional
+native checks skipped), and its installation self-test passes in live CI. The
+fresh consumer baseline producer also passes. Local native control runs validate
+the designed regression: the main module passes, the changed module has exactly
+the new and unchanged expected assertion failures, and restoring production
+behavior while keeping the new test passes again. The frozen graph retains both
+failing files, retains a passing mocked consumer conservatively, and leaves the
+unrelated passing control unresolved. Full remote CI and general recall remain
+separate; no skipping or Jev calls are enabled.
+
 ## Installation and inspection objective: verified preview, 2026-11-01
 
 The requested installation skill, dependency package and readable graph/query
