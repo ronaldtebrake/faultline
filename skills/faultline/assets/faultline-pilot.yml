@@ -1,0 +1,96 @@
+# Install in the CONSUMER repository, alongside existing required checks.
+# Required: reviewed faultline.json, FAULTLINE_REF (40-character reviewed commit),
+# and .github/faultline-setup.sh on the default branch. Setup receives the target
+# checkout path and prepares its existing test runtime and reset wrapper.
+name: Faultline selective pilot
+on:
+  workflow_dispatch:
+    inputs:
+      selection:
+        description: Compact manifest transport produced by faultline ci-submit
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  pilot:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: policy
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Require a reviewed engine pin
+        env:
+          FAULTLINE_REF: ${{ vars.FAULTLINE_REF }}
+        run: |
+          [[ "$FAULTLINE_REF" =~ ^[a-f0-9]{40}$ ]] || { echo 'Set FAULTLINE_REF to a reviewed commit'; exit 1; }
+      - uses: actions/checkout@v5
+        with:
+          repository: ronaldtebrake/faultline
+          ref: ${{ vars.FAULTLINE_REF }}
+          token: ${{ secrets.FAULTLINE_REPO_TOKEN || github.token }}
+          path: engine
+          persist-credentials: false
+      - name: Decode data without executing it
+        id: selection
+        run: |
+          python3 engine/skills/faultline/scripts/run.py --root policy ci-receive \
+            --event "$GITHUB_EVENT_PATH" --output "$RUNNER_TEMP/selection.json" > "$RUNNER_TEMP/received.json"
+          python3 -c 'import json,os; d=json.load(open(os.environ["RUNNER_TEMP"]+"/received.json")); print("revision="+d["revision"])' >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.selection.outputs.revision }}
+          fetch-depth: 0
+          path: target
+          persist-credentials: false
+      - name: Require reviewed runner configuration
+        run: cmp policy/faultline.json target/faultline.json
+      - name: Prepare existing project runtime
+        run: bash policy/.github/faultline-setup.sh "$GITHUB_WORKSPACE/target"
+      - name: Execute proposed PHPUnit and Behat selection
+        id: selected
+        continue-on-error: true
+        run: |
+          python3 engine/skills/faultline/scripts/run.py --root target ci-run \
+            --selection "$RUNNER_TEMP/selection.json" --runners phpunit behat playwright --execute \
+            --output .faultline/pilot-selected.json
+      - name: Prepare full-run control
+        run: |
+          python3 - <<'PYTHON'
+          import json, os
+          p = os.environ['RUNNER_TEMP']
+          d = json.load(open(p + '/selection.json'))
+          d['suites'] = {name: {'mode': 'all'} for name in d['suites']}
+          with open(p + '/full.json', 'w') as f:
+              json.dump(d, f)
+          PYTHON
+      - name: Reset project runtime for the control run
+        run: bash policy/.github/faultline-setup.sh "$GITHUB_WORKSPACE/target"
+      - name: Execute full control
+        id: full
+        continue-on-error: true
+        run: |
+          python3 engine/skills/faultline/scripts/run.py --root target ci-run \
+            --selection "$RUNNER_TEMP/full.json" --runners phpunit behat playwright --execute \
+            --output .faultline/pilot-full.json
+      - name: Compare observed outcomes
+        if: ${{ !cancelled() }}
+        run: |
+          python3 engine/skills/faultline/scripts/run.py --root target ci-compare \
+            --selected .faultline/pilot-selected.json --full .faultline/pilot-full.json \
+            > target/.faultline/pilot-comparison.json
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: faultline-pilot
+          path: |
+            ${{ runner.temp }}/selection.json
+            target/.faultline/pilot-*.json
+            target/.faultline/executions/
+      - name: Preserve runner failures
+        if: ${{ !cancelled() && (steps.selected.outcome != 'success' || steps.full.outcome != 'success') }}
+        run: exit 1

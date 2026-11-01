@@ -27,6 +27,8 @@ Use `python3 "<this-skill>/scripts/run.py" --root "<repo>"` before the commands 
 
 Each new assessment is fresh by default; `--fresh` is explicit. `--reuse-cache` permits an optional 64 MiB exact-input answer cache. Run evidence is separate and always retained. The report distinguishes newly accepted answers, recovered answers in this run, and reuse from other runs. Cache misses or cache failures never erase paid progress.
 
-The current evaluator uses five-level Choice probabilities and serial bounded transport. Pooled/Noul experiments are documented separately; these commands do not promise their timings. Compare relevance thresholds offline without changing or normalizing the stored probabilities.
+The default evaluator uses five-level Choice probabilities and serial bounded transport. The opt-in Noul workflow is described below; its transport latency needs separate measurement. Compare relevance thresholds offline without changing or normalizing the stored probabilities.
 
 Engine-to-report time excludes installation, agent investigation and the final metadata export. Report unknown agent time/cost and missing API usage as unknown. Fewer selected files do not establish actual CI time saved, regression recall or coverage.
+
+For a compact executable CI selection, use explicit `--evaluator noul-v1`; follow [selective CI](ci.md). The default commands above remain the independent Choice workflow.

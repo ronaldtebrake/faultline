@@ -1,0 +1,75 @@
+# Install on the CONSUMER default branch beside existing required checks.
+# Requires FAULTLINE_REF pinned to a reviewed engine commit, faultline.json,
+# and .github/faultline-setup.sh on the default branch. Keep this pilot optional.
+name: Faultline automatic PR pilot
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  selected:
+    if: github.event.action != 'edited' || github.event.changes.base.ref.from != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: policy
+          persist-credentials: false
+      - name: Require a reviewed engine pin
+        env:
+          FAULTLINE_REF: ${{ vars.FAULTLINE_REF }}
+        run: |
+          [[ "$FAULTLINE_REF" =~ ^[a-f0-9]{40}$ ]] || { echo 'Set FAULTLINE_REF to a reviewed commit'; exit 1; }
+      - uses: actions/checkout@v5
+        with:
+          repository: ronaldtebrake/faultline
+          ref: ${{ vars.FAULTLINE_REF }}
+          token: ${{ secrets.FAULTLINE_REPO_TOKEN || github.token }}
+          path: engine
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          path: target
+          persist-credentials: false
+      - name: Require reviewed runner configuration
+        run: cmp policy/faultline.json target/faultline.json
+      - name: Retrieve once, or choose full execution immediately
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TARGET_BRANCH: ${{ github.event.pull_request.base.ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          python3 engine/skills/faultline/scripts/run.py --root target ci-fetch \
+            --repository "$REPOSITORY" --target-branch "$TARGET_BRANCH" --base-ref "$BASE_SHA" \
+            --output "$RUNNER_TEMP/selection.json" > "$RUNNER_TEMP/fetch.json"
+          python3 - <<'PYTHON'
+          import json, os
+          data = json.load(open(os.environ['RUNNER_TEMP'] + '/fetch.json'))
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('Faultline: **' + data['source'] + '** (' + data['reason'] + ').\n')
+          PYTHON
+      - name: Prepare existing project runtime, including native validation
+        run: bash policy/.github/faultline-setup.sh "$GITHUB_WORKSPACE/target"
+      - name: Execute PHPUnit and Behat, preserving runner failure status
+        run: |
+          python3 engine/skills/faultline/scripts/run.py --root target ci-run \
+            --selection "$RUNNER_TEMP/selection.json" --runners phpunit behat playwright --execute \
+            --output .faultline/pr-execution.json
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: faultline-pr-${{ github.event.pull_request.number }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/selection.json
+            ${{ runner.temp }}/fetch.json
+            target/.faultline/pr-execution.json
+            target/.faultline/executions/
+          if-no-files-found: warn
+          retention-days: 7

@@ -37,7 +37,7 @@ faultline run --selection <selection.json> --suite unit:default
 faultline run --selection <selection.json> --suite unit:default --execute
 ```
 
-`select` produces a selection receipt; it does not accept the context bundles used by `benchmark`. `run` previews by default. With `--execute`, it validates the revision/configuration and runs the full suite, preserving exit status. Selective execution is unavailable. Native identity mismatches keep execution full and invalidate claims of a complete selection assessment.
+`select` produces a selection receipt; it does not accept the context bundles used by `benchmark`. `run` previews by default. With `--execute`, it validates the revision/configuration and runs the full suite, preserving exit status. Use the separate [selective CI workflow](ci.md) for compact Noul manifests; this receipt interface remains full-suite only. Native identity mismatches keep execution full and invalidate claims of a complete selection assessment.
 
 Use `--prerequisite <successful-receipt.json>` for required suite receipts. `--junit-output` requests a fresh JUnit file for PHPUnit or directory for Behat. Import results with `record --selection <selection.json> --run <receipt.json> --input <results> --format json|junit`; `execution-report` aggregates saved outcomes. See each command’s `--help` for artifact paths.
 

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"<FAULTLINE_SKILL_PATH>/scripts/hook.py\" --agent codex --target-branch main",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

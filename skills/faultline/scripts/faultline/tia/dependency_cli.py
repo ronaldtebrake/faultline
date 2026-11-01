@@ -15,6 +15,12 @@ def add_commands(commands):
     compare.add_argument('--head', default='HEAD')
     compare.add_argument('--runtime', action='append', default=[], type=Path, help='Validated runtime dependencies from the base or an available ancestor')
     compare.add_argument('--catalog', help='Show affected surfaces and uncovered changes without inference')
+    affected = actions.add_parser('affected', help='Explain tests reached by literal file paths; no edits, inference or execution')
+    affected.add_argument('--file', required=True, action='append', help='Repository-relative file; repeat for multiple files')
+    affected.add_argument('--revision', default='HEAD', help='Committed snapshot to inspect; working-tree edits are ignored')
+    affected.add_argument('--base', help='Also inspect an older snapshot for deleted or disconnected dependency paths')
+    affected.add_argument('--runtime', action='append', default=[], type=Path, help='Validated runtime observations available at the requested revisions')
+    affected.add_argument('--output', type=Path, help='Also save the readable JSON impact report')
     context = actions.add_parser('context', help='Bind a runtime collector to a clean revision and configured suite variant')
     context.add_argument('--suite', required=True)
     context.add_argument('--output', required=True, type=Path)
@@ -42,6 +48,19 @@ def dispatch(store, args):
     from .dependency_graph import build, compare
     def path(value):
         return (store.root / value).resolve() if value else None
+    if args.graph_action == 'affected':
+        from .dependency_query import affected, file_names
+        from ..core import write_json
+        files = file_names(args.file)
+        runtime = [path(p) for p in args.runtime]
+        head = build(store, args.revision, runtime_paths=runtime)
+        base = build(store, args.base, runtime_paths=runtime) if args.base else None
+        result = affected(head['graph'], files, base=base['graph'] if base else None)
+        result['snapshots'] = {'head': head['path'], 'base': base['path'] if base else None}
+        result['preparation'] = {key: head[key] + (base[key] if base else 0) for key in ('parsed', 'reused')}
+        if args.output:
+            write_json(path(args.output), result)
+        return result
     if args.graph_action == 'baseline':
         from . import dependency_shared as shared
         if args.baseline_action == 'restore':

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "python3 \"<FAULTLINE_SKILL_PATH>/scripts/hook.py\" --agent cursor --target-branch main",
+        "timeout": 15,
+        "failClosed": true
+      }
+    ]
+  }
+}

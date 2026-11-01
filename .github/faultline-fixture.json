@@ -1,0 +1,13 @@
+{
+  "schema_version": 2,
+  "repository": "faultline-installation-fixture",
+  "suites": [
+    {
+      "id": "fixture",
+      "runner": "generic",
+      "sources": [
+        ".github/fixtures/*.spec.ts"
+      ]
+    }
+  ]
+}

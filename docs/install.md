@@ -60,6 +60,18 @@ The action installs that exact source revision in a fresh runner-local virtual
 environment. Use `"$FAULTLINE_PYTHON"` for helpers that import Faultline; the
 consumer's default Python and dependencies remain unchanged.
 
+For an unpublished dependency-collection pilot, use a reviewed wheel and a
+requirements file that pins its SHA-256. Keep both files in the same directory,
+create a fresh virtual environment, and install from that directory with
+`python -m pip install --no-index --no-deps --require-hashes -r requirements.txt`.
+Record the exact source snapshot as well as the wheel hash; a package version
+alone cannot distinguish local builds. The CLI contains the Python engine and
+its native analysis/runner helpers. Copy the separate Behat or Playwright
+collector assets into the consumer as described in the
+[dependency guide](../skills/faultline/references/dependencies.md).
+Collection and graph preparation require no Jev key. Validate the installed
+package with the actual consumer configuration before enabling collection in CI.
+
 To see the report format without credentials or API calls:
 
 ```bash
@@ -67,6 +79,10 @@ faultline report --demo --output faultline-demo.html
 ```
 
 Skill-only users can ask their agent to generate that demo. The HTML uses invented data.
+
+## Optional agent push hooks
+
+Enable [automatic PR selections](ci.md) first, then merge the matching [hook template](../skills/faultline/references/hooks.md) into your agent settings, preserving existing hooks. Review the hook trust prompt; nothing installs automatically. CI needs no Jev key.
 
 ## Updating and contributing
 

@@ -59,6 +59,6 @@ Native discovery may require a working application; use `discover --native` or `
 faultline run --selection <selection.json> --suite <suite:variant>
 ```
 
-This only previews a proposal. When the user asks to execute tests, add `--execute`; the current engine validates exact revisions/configuration and executes the **full suite**, preserving exit status. Selective execution is unavailable. Configure runner commands and explicit prerequisites before execution. `record` imports the associated results; `execution-report` aggregates them. Existing CI remains responsible for services, containers, isolation, and scheduling.
+This only previews a proposal. When the user asks to execute tests, add `--execute`; the current engine validates exact revisions/configuration and executes the **full suite**, preserving exit status. This legacy command still runs fully. The separate [CI pilot](ci.md) supports compact Noul selections and explicit selective execution. Configure runner commands and explicit prerequisites before execution. `record` imports the associated results; `execution-report` aggregates them. Existing CI remains responsible for services, containers, isolation, and scheduling.
 
 See [runner integration](execution.md) for native discovery, full-suite execution, and existing coverage imports.

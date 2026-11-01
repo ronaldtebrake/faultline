@@ -1,0 +1,54 @@
+# Install on the CONSUMER default branch. Accepts data, never checks out the
+# unpublished PR commit, runs application code, or calls Jev.
+name: Faultline publish decision
+on:
+  workflow_dispatch:
+    inputs:
+      selection:
+        description: Bounded compact selection transport
+        required: true
+        type: string
+      handoff:
+        description: Repository, target branch, merge base and manifest identity
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  publish:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          path: policy
+          persist-credentials: false
+      - name: Require a reviewed engine pin
+        env:
+          FAULTLINE_REF: ${{ vars.FAULTLINE_REF }}
+        run: |
+          [[ "$FAULTLINE_REF" =~ ^[a-f0-9]{40}$ ]] || { echo 'Set FAULTLINE_REF to a reviewed commit'; exit 1; }
+      - uses: actions/checkout@v5
+        with:
+          repository: ronaldtebrake/faultline
+          ref: ${{ vars.FAULTLINE_REF }}
+          token: ${{ secrets.FAULTLINE_REPO_TOKEN || github.token }}
+          path: engine
+          persist-credentials: false
+      - name: Validate publication against reviewed configuration
+        id: decision
+        run: |
+          python3 engine/skills/faultline/scripts/run.py --root policy ci-receive --publication \
+            --event "$GITHUB_EVENT_PATH" --output "$RUNNER_TEMP/publication" > "$RUNNER_TEMP/received.json"
+          python3 -c 'import json,os; d=json.load(open(os.environ["RUNNER_TEMP"]+"/received.json")); print("artifact_name="+d["artifact_name"])' >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ${{ steps.decision.outputs.artifact_name }}
+          path: |
+            ${{ runner.temp }}/publication/selection.json
+            ${{ runner.temp }}/publication/handoff.json
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: false

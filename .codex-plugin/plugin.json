@@ -1,7 +1,7 @@
 {
   "name": "faultline",
   "version": "0.11.3",
-  "description": "Jev-based test impact assessment for CI and coding agents.",
+  "description": "Install Faultline, inspect test dependencies, and assess change impact with optional Jev scoring.",
   "author": {
     "name": "ronaldtebrake",
     "url": "https://github.com/ronaldtebrake"
@@ -9,8 +9,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Faultline",
-    "shortDescription": "Understand tests and rank their relevance to a change with Jev.",
-    "longDescription": "Score actual test source against a cumulative change with Jev, explain proposed selections and costs, and compare frozen evidence with CI outcomes.",
+    "shortDescription": "Install Faultline and inspect or assess test impact.",
+    "longDescription": "Set up the packaged CLI and GitHub CI, explain file-to-test dependency paths, and optionally assess changes with Jev.",
     "developerName": "ronaldtebrake",
     "category": "Productivity",
     "capabilities": [
@@ -18,8 +18,8 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Use Faultline to configure and inspect this repository’s test source.",
-      "Use Faultline to benchmark one PR and save its Jev routing report."
+      "Use Faultline to install the CLI and configure GitHub source-baseline CI for this repository.",
+      "Use Faultline to show which tests depend on a file and explain the dependency paths."
     ]
   },
   "homepage": "https://github.com/ronaldtebrake/faultline",

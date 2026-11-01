@@ -1,7 +1,7 @@
 {
   "name": "faultline",
   "version": "0.11.3",
-  "description": "Jev-based test impact assessment for CI and coding agents.",
+  "description": "Install Faultline, inspect test dependencies, and assess change impact with optional Jev scoring.",
   "author": {
     "name": "ronaldtebrake",
     "url": "https://github.com/ronaldtebrake"
