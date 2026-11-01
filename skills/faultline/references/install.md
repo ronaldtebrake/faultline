@@ -13,6 +13,9 @@ For CI, prefer `ronaldtebrake/faultline/actions/setup` at a reviewed full commit
 SHA. GitHub retrieves the package from that commit and installs it under the
 runner's temporary directory. It exports `FAULTLINE_CLI` and `FAULTLINE_PYTHON`.
 Do not commit the Python engine, a wheel, or a private report to the consumer.
+Prefer user-scoped agent-skill installation (`skills add --global`) so the
+bundled skill support files are shared across projects. If the skill is installed
+inside a project instead, keep that installed copy ignored.
 
 For a local dependency, use the project's existing Python tool/environment or
 create a dedicated virtual environment, then install a commit-pinned package:

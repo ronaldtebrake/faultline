@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - uses: ronaldtebrake/faultline/actions/setup@e4877bf5bbee4aee4b36249f35e5ac11d49b1dc7
+      - uses: ronaldtebrake/faultline/actions/setup@bf9a8368856ede14734f6e8e6962407566da25dd
       - name: Restore a trusted ancestor baseline
         env:
           GH_TOKEN: ${{ github.token }}

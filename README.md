@@ -24,7 +24,7 @@ Required tests and uncertain assessments stay RUN. Relevance is not a failure pr
 Install the self-contained skill (Git, Python 3.10+, and npm for the installer):
 
 ```bash
-npx skills add https://github.com/ronaldtebrake/faultline --skill faultline
+npx skills add https://github.com/ronaldtebrake/faultline --skill faultline --global
 ```
 
 Follow [setup and API-key steps](docs/install.md), then ask your agent:

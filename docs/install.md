@@ -4,13 +4,28 @@ You need Git and Python 3.10+. Faultline reads test source; setup and assessment
 
 ## With a coding agent
 
-Run this in the repository you want to assess. The skill installer needs Node.js/npm:
+Install the skill once for your agent account. This keeps its bundled support
+files out of consumer repositories. The skill installer needs Node.js/npm:
 
 ```bash
-npx skills add https://github.com/ronaldtebrake/faultline --skill faultline
+npx skills add https://github.com/ronaldtebrake/faultline --skill faultline --global
 ```
 
 Select your agent and start a new session. The skill includes its Python engine: no separate pip install, database service, or second skill is needed. Private repositories require authenticated Git access.
+
+The new installation/graph workflow is currently available on the experimental
+`codex/reusable-ci-setup` branch. To use its reviewed snapshot before it reaches
+the default branch:
+
+```sh
+npx skills add https://github.com/ronaldtebrake/faultline/tree/bf9a8368856ede14734f6e8e6962407566da25dd/skills/faultline --skill faultline --global
+```
+
+For the matching CLI dependency, append
+`@bf9a8368856ede14734f6e8e6962407566da25dd` to the Git package URL below.
+This is a commit-pinned preview, not a new tagged release. Project-scoped skill
+installation is also possible, but keep the installed engine ignored instead of
+vendoring it into the application. Commit configuration and dependency pins.
 
 Ask your agent:
 
