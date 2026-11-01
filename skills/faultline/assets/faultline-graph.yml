@@ -1,5 +1,4 @@
-# Copy as .github/workflows/faultline-graph.yml beside existing full test checks.
-# Review/update the full setup-action SHA when adopting a different engine.
+# Keep existing full test jobs unchanged. No consumer helper scripts are needed.
 name: Faultline source graph
 on:
   pull_request:
@@ -21,61 +20,9 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - uses: ronaldtebrake/faultline/actions/setup@de0be647b6d50a46c97c4842b99453c8e4bb73cf
-      - name: Restore a trusted ancestor baseline
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          TRUSTED_BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          mkdir -p .faultline/ci-graph
-          "$FAULTLINE_CLI" graph baseline fetch --repository "$REPOSITORY" \
-            --workflow faultline-graph.yml --branch "$TRUSTED_BRANCH" \
-            --output "$RUNNER_TEMP/faultline-baseline.json" > .faultline/ci-graph/restore.json
-      - name: Build readable source graph
-        run: |
-          "$FAULTLINE_CLI" init
-          "$FAULTLINE_CLI" graph build --output .faultline/ci-graph/graph.json > .faultline/ci-graph/build.json
-      - name: Explain actual PR changes
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          base=$(git merge-base "$BASE_SHA" HEAD)
-          "$FAULTLINE_CLI" assess --base "$base" --head HEAD > .faultline/ci-graph/impact.json
-      - name: Package source facts from the default branch
-        if: github.event_name == 'push'
-        env:
-          REPOSITORY: ${{ github.repository }}
-          REPOSITORY_ID: ${{ github.repository_id }}
-        run: |
-          python3 - <<'PYTHON'
-          import json, os
-          from pathlib import Path
-          value = {'repository': os.environ['REPOSITORY'].lower(),
-                   'repository_id': int(os.environ['REPOSITORY_ID']),
-                   'workflow': 'faultline-graph.yml', 'revision': os.environ['GITHUB_SHA'],
-                   'run_id': int(os.environ['GITHUB_RUN_ID']),
-                   'run_attempt': int(os.environ['GITHUB_RUN_ATTEMPT']),
-                   'event': 'push', 'branch': os.environ['GITHUB_REF_NAME'], 'collections': []}
-          (Path(os.environ['RUNNER_TEMP']) / 'faultline-producer.json').write_text(json.dumps(value))
-          PYTHON
-          "$FAULTLINE_CLI" graph baseline pack --producer "$RUNNER_TEMP/faultline-producer.json" \
-            --output .faultline/baseline.json > .faultline/ci-graph/package.json
-      - uses: actions/upload-artifact@v6
-        if: github.event_name == 'push'
+      # Replace with the reviewed full commit containing actions/graph.
+      - uses: ronaldtebrake/faultline/actions/graph@4619f39b0b8bb42486b1c3b7385bea12907728e5
         with:
-          name: faultline-baseline-v1
-          path: .faultline/baseline.json
-          include-hidden-files: true
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 14
-      - uses: actions/upload-artifact@v6
-        if: ${{ !cancelled() }}
-        with:
-          name: faultline-graph-${{ github.run_id }}-${{ github.run_attempt }}
-          path: .faultline/ci-graph/
-          include-hidden-files: true
-          if-no-files-found: warn
-          retention-days: 14
+          base-ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          trusted-branch: ${{ github.event.repository.default_branch }}
+          publish-baseline: ${{ github.event_name == 'push' }}

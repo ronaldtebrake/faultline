@@ -18,11 +18,11 @@ The new installation/graph workflow is currently available on the experimental
 the default branch:
 
 ```sh
-npx skills add https://github.com/ronaldtebrake/faultline/tree/de0be647b6d50a46c97c4842b99453c8e4bb73cf/skills/faultline --skill faultline --global
+npx skills add https://github.com/ronaldtebrake/faultline/tree/4619f39b0b8bb42486b1c3b7385bea12907728e5/skills/faultline --skill faultline --global
 ```
 
 For the matching CLI dependency, append
-`@de0be647b6d50a46c97c4842b99453c8e4bb73cf` to the Git package URL below.
+`@4619f39b0b8bb42486b1c3b7385bea12907728e5` to the Git package URL below.
 This is a commit-pinned preview, not a new tagged release. Project-scoped skill
 installation is also possible, but keep the installed engine ignored instead of
 vendoring it into the application. Commit configuration and dependency pins.
@@ -112,3 +112,5 @@ npx skills add typesafe-ai/skills --skill typesafe-ai
 ```
 
 Routine Faultline users do not need it. If TLS verification fails, repair Python's trust store or use an approved `SSL_CERT_FILE`/`SSL_CERT_DIR`; optional `certifi` is supported. Never disable verification.
+
+The pinned `actions/graph` integration installs Faultline and owns baseline restoration, validation, would-run summaries and artifacts. Consumer repositories need only configuration and workflow wiring; no verification or metadata scripts. See [the workflow template](../skills/faultline/assets/faultline-graph.yml).
