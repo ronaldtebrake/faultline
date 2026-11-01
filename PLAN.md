@@ -29,7 +29,10 @@ throwaway draft PR. This is a designed sensitivity check, not held-out recall.
 
 The package controls pass 199 checks in the exact published tree (two optional
 native checks skipped), and its installation self-test passes in live CI. The
-fresh consumer baseline producer also passes. Local native control runs validate
+fresh consumer baseline producer and its descendant graph CI both pass. The
+descendant asserts remote restoration, exactly two changed/added parsed sources,
+at least 6,000 reused facts, new-target discovery, exact affected sources and
+unchanged existing test blobs; configuration is unchanged. Local native control runs validate
 the designed regression: the main module passes, the changed module has exactly
 the new and unchanged expected assertion failures, and restoring production
 behavior while keeping the new test passes again. The frozen graph retains both
