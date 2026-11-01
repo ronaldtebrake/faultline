@@ -60,9 +60,14 @@ jobs:
               assert restored['restored'] is True, restored
               assert built['parsed'] == 1, built['parsed']
               assert built['reused'] > 0, built['reused']
-          else:
-              assert expected['phase'] == 'cold'
+          elif expected['phase'] == 'cold':
               assert built['parsed'] > 0, built['parsed']
+          else:
+              assert expected['phase'] == 'auto'
+              if restored['restored']:
+                  assert built['reused'] > 0, built['reused']
+              else:
+                  assert built['parsed'] > 0, built['parsed']
           print(json.dumps({'verified': True, 'phase': expected['phase'],
                             'restored': restored['restored'], 'parsed': built['parsed'],
                             'reused': built['reused'], 'explained_targets': len(query['affected']),

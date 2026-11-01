@@ -1,6 +1,8 @@
 # Faultline
 
-Faultline uses Jev to propose which tests to run for a PR or MR. It compares the cumulative diff with actual test source, then reports the selection, its reasons, and inference costs.
+Faultline records test dependencies and explains which tests a file change can
+reach. It can also use Jev to assess a cumulative PR or MR diff against actual
+test source, reporting proposed selections, reasons and inference costs.
 
 The goal is to reduce CI work while retaining useful regression detection. Today, Faultline is **report-only by default**: your CI keeps running its tests while you evaluate what Faultline would have selected. An opt-in PHPUnit, Behat or Playwright CI pilot can execute exported selections alongside full-run comparisons.
 
@@ -8,7 +10,27 @@ The goal is to reduce CI work while retaining useful regression detection. Today
 
 [Watch the 8-second video](docs/demo/faultline-jev-tia.mp4) · [Try the interactive demo](docs/demo/README.md). The demo uses invented data.
 
-## How it works
+## Inspect dependencies without Jev
+
+Install the [packaged CLI and agent skill](docs/install.md), configure
+`faultline.json`, then run:
+
+```sh
+faultline graph build --output .faultline/graph.json
+faultline graph affected --file src/price.ts --output .faultline/impact.json
+faultline graph compare --base <base-commit> --head HEAD
+```
+
+These commands read committed source and return human/agent-readable JSON with
+dependency paths, revisions and unresolved targets. They execute no tests and
+need no Jev key. The [GitHub source-baseline template](skills/faultline/assets/faultline-graph.yml)
+shares parser facts between runs while existing tests keep running. Consumers
+install one pinned package; they do not commit a copy of the engine.
+
+The new workflow is a [commit-pinned preview](docs/install.md#with-a-coding-agent)
+on `codex/reusable-ci-setup`, pending adoption on the default branch.
+
+## Optional Jev assessment
 
 1. Configure where your tests live in `faultline.json`. Faultline reads their source at the exact Git revision, without starting the application.
 2. Start with the cumulative diff. If the diff leaves behavior implicit, such as inherited behavior, an external patch, or a dependency update, your agent gathers focused source evidence. Faultline verifies and freezes it.
