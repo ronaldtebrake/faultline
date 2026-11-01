@@ -12,6 +12,24 @@ pushes and reports PR impact without changing existing test jobs. This initial
 template contains no runtime observations; extend collection alongside existing
 full runs when needed. The package and JSON CLI are the integration boundary. Consumers need configuration and CI wiring, with no Python verification, producer-metadata or report-copy helpers. `actions/setup` remains available for installation alone.
 
+`faultline.json` describes the scope and test suites; it is not the baseline.
+The report artifact's `graph.json` contains a node for every tracked file, known
+dependency edges and configured test targets. Nodes alone do not establish
+complete dependency coverage. The separate `baseline.json` artifact carries
+reusable parser facts from a trusted ancestor. A descendant reuses unchanged
+facts, parses changed or added sources, and resolves a fresh graph for its tree.
+New tests matching the configured source patterns are discovered automatically.
+
+For controlled experiments, the optional action `expectations` JSON can assert
+`exact_affected` source paths, configured `unresolved` controls, and
+`unchanged_tests: {"revision": "<full commit SHA>", "sources": ["tests/ExistingTest.php"]}`.
+The last check compares Git blobs with the pinned revision, so changing the test
+cannot masquerade as retaining an existing test through a dependency path.
+The package checks these controls and writes their result into the job summary
+and artifact. An unresolved control still runs in full CI; it is not permission
+to skip it. When comparing a stack, the incremental prediction appears first,
+with the cumulative integration diff below it.
+
 `faultline graph baseline pack --producer producer.json --runtime runtime.json
 --output baseline.json` creates a portable bundle containing parser facts and
 validated observations. Producer metadata names the GitHub repository and numeric

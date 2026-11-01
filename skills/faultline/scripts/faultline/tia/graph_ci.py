@@ -1,6 +1,7 @@
 """Packaged source-baseline CI orchestration; never a test execution policy."""
 import json
 import os
+import re
 from pathlib import Path
 
 from ..core import FaultlineError, write_json
@@ -20,7 +21,8 @@ def expectations(value):
         value = json.loads(value) if isinstance(value, str) else value
     except (ValueError, TypeError):
         raise FaultlineError('Graph expectations must be a JSON object') from None
-    allowed = {'restored', 'parsed', 'min_reused', 'affected', 'new_files', 'new_targets', 'paths'}
+    allowed = {'restored', 'parsed', 'min_reused', 'affected', 'exact_affected', 'unresolved',
+               'unchanged_tests', 'new_files', 'new_targets', 'paths'}
     if not isinstance(value, dict) or set(value) - allowed:
         raise FaultlineError('Unsupported graph expectation fields')
     if 'restored' in value and type(value['restored']) is not bool:
@@ -28,12 +30,20 @@ def expectations(value):
     for key in ('parsed', 'min_reused'):
         if key in value and (type(value[key]) is not int or value[key] < 0):
             raise FaultlineError('Expected parser counts must be nonnegative integers')
-    for key in ('affected', 'new_files', 'new_targets'):
+    for key in ('affected', 'exact_affected', 'unresolved', 'new_files', 'new_targets'):
         if key in value:
             if not isinstance(value[key], list):
                 raise FaultlineError('Expected sources must be arrays of literal paths')
             if value[key]:
                 file_names(value[key])
+    if 'unchanged_tests' in value:
+        control = value['unchanged_tests']
+        if (not isinstance(control, dict) or set(control) != {'revision', 'sources'} or
+                not isinstance(control['revision'], str) or
+                not re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', control['revision']) or
+                not isinstance(control['sources'], list) or not control['sources']):
+            raise FaultlineError('Unchanged tests need a full commit SHA and nonempty sources array')
+        file_names(control['sources'])
     if 'paths' in value:
         if not isinstance(value['paths'], list):
             raise FaultlineError('Expected paths must be an array of source/input objects')
@@ -44,7 +54,7 @@ def expectations(value):
     return value
 
 
-def verify(document, restored, built, expected):
+def verify(document, restored, built, expected, *, store=None):
     failures = []
     if (document['evaluator'] != 'graph-v1' or document['jev_requests'] != 0 or document['cost_usd'] != 0 or
             document['ci_policy'] != 'full_suite' or document['omission_authorized'] or document['coverage_complete']):
@@ -55,6 +65,27 @@ def verify(document, restored, built, expected):
     if built['reused'] < expected.get('min_reused', 0):
         failures.append('Parser reuse is below the expected minimum')
     positive = {r['source'] for r in document['tests'] if r['status'] == 'affected'}
+    if 'exact_affected' in expected and positive != set(expected['exact_affected']):
+        missing = sorted(set(expected['exact_affected']) - positive)
+        extra = sorted(positive - set(expected['exact_affected']))
+        failures.append(f'Exact affected sources differ: missing={missing}, extra={extra}')
+    for path in expected.get('unresolved', []):
+        rows = [r for r in document['tests'] if r['source'] == path]
+        if not rows or any(r['status'] != 'unresolved' for r in rows):
+            failures.append(f'Expected configured unresolved test: {path}')
+    control = expected.get('unchanged_tests')
+    if control:
+        sources = {r['source'] for r in document['tests']}
+        for path in control['sources']:
+            try:
+                if store is None or path not in sources:
+                    raise FaultlineError('Missing configured test')
+                old = git(store.root, 'rev-parse', '--verify', '--end-of-options', control['revision'] + ':' + path)
+                new = git(store.root, 'rev-parse', '--verify', '--end-of-options', document['change']['head'] + ':' + path)
+                if old != new:
+                    raise FaultlineError('Test blob changed')
+            except FaultlineError:
+                failures.append(f'Expected test unchanged from {control["revision"]}: {path}')
     new_ids = set(document['graph']['added_targets'])
     new_targets = {r['source'] for r in document['tests'] if r['id'] in new_ids}
     for key, actual in [('affected', positive), ('new_files', set(document['graph']['added_files'])), ('new_targets', new_targets)]:
@@ -111,7 +142,7 @@ def run(store, *, base, compare_base=None, trusted_branch=None, workflow=None,
         outputs[name] = {**report(doc, folder / name), 'json': str(folder / (name + '.json')), 'summary': doc['summary']}
         documents[name] = doc
         failures += verify(doc, restored, build_result, {})
-    failures += verify(documents.get('stacked', documents['cumulative']), restored, build_result, expected)
+    failures += verify(documents.get('stacked', documents['cumulative']), restored, build_result, expected, store=store)
     bundle = {'schema_version': 1, 'kind': 'graph-ci', 'head': head, 'bases': bases,
         'restore': restored, 'build': build_result, 'reports': outputs,
         'validation': {'passed': not failures, 'failures': sorted(set(failures)), 'expectations': expected},
@@ -121,8 +152,17 @@ def run(store, *, base, compare_base=None, trusted_branch=None, workflow=None,
     summary = ['# Faultline — full CI retained', '',
         f"Baseline restored: **{restored['restored']}**. Parsed: **{built['parsed']}**; reused: **{built['reused']}**.",
         'Source facts only; runtime coverage and regression recall are not established.', '']
-    for name, doc in documents.items():
-        summary += [f'### {name.title()} change', '', markdown(doc, limit=48 * 1024)]
+    if expected:
+        summary += [f"Experiment controls: **{'failed' if failures else 'passed'}**. See result.json for exact expectations.", '']
+    # Put the incremental PR prediction before the potentially much larger
+    # cumulative integration diff (which may include configuration changes).
+    for name in reversed(documents):
+        collapsed = name == 'cumulative' and 'stacked' in documents
+        if collapsed:
+            summary += ['<details><summary>Cumulative change</summary>', '']
+        summary += [f'### {name.title()} change', '', markdown(documents[name], limit=48 * 1024)]
+        if collapsed:
+            summary += ['', '</details>', '']
     if failures:
         summary += ['Validation failed. See result.json for the expected and observed values.']
     text = '\n'.join(summary)

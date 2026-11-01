@@ -44,6 +44,8 @@ class GraphCITests(unittest.TestCase):
             return restore(self.store, cold / 'baseline.json')
         expect = {'restored': True, 'parsed': 2, 'min_reused': 1,
                   'new_files': ['src/NewPolicy.php', 'tests/NewTest.php'], 'new_targets': ['tests/NewTest.php'],
+                  'exact_affected': ['tests/NewTest.php'], 'unresolved': ['tests/BTest.php'],
+                  'unchanged_tests': {'revision': self.base, 'sources': ['tests/ATest.php', 'tests/BTest.php']},
                   'affected': ['tests/NewTest.php'], 'paths': [{'source': 'tests/NewTest.php', 'input': 'src/NewPolicy.php'}]}
         with patch('faultline.tia.graph_ci.fetch', side_effect=fetch):
             result = run(self.store, base=self.base, compare_base=old, trusted_branch='main', output=self.store.path / 'warm',
@@ -55,6 +57,9 @@ class GraphCITests(unittest.TestCase):
         self.assertGreater(len(updated['sources']), len(checked(cold / 'baseline.json')['sources']))
         self.assertFalse(result['omission_authorized'])
         self.assertEqual(0, result['jev_requests'])
+        summary = (self.store.path / 'warm' / 'summary.md').read_text()
+        self.assertLess(summary.index('### Stacked'), summary.index('### Cumulative'))
+        self.assertIn('Experiment controls: **passed**', summary)
         with self.assertRaisesRegex(FaultlineError, 'already exists'):
             run(self.store, base=self.base, output=cold)
 
@@ -79,6 +84,10 @@ class GraphCITests(unittest.TestCase):
                       {'affected': 'a'}, {'paths': [{'source': 'a'}]}, {'new_files': ['../secret']}, {'shell': 'true'}):
             with self.assertRaises(FaultlineError):
                 expectations(value)
+        for control in ({'revision': 'main', 'sources': ['tests/ATest.php']},
+                        {'revision': self.base, 'sources': []}, {'revision': self.base, 'sources': 'test'}):
+            with self.assertRaises(FaultlineError):
+                expectations({'unchanged_tests': control})
         result = run(self.store, base=self.base, output=self.store.path / 'report', environ=self.env())
         doc = checked(result['reports']['cumulative']['json'])
         doc['tests'] = [dict(copy.deepcopy(doc['tests'][0]), id='<script>|' + str(i)) for i in range(200)]
@@ -86,6 +95,23 @@ class GraphCITests(unittest.TestCase):
         self.assertLess(len(text.encode()), 4096)
         self.assertIn('more candidates', text)
         self.assertNotIn('<script>', text)
+
+    def test_exact_and_negative_controls_reject_wrong_predictions(self):
+        cases = [({'exact_affected': []}, 'extra='),
+                 ({'exact_affected': ['tests/BTest.php']}, 'missing='),
+                 ({'unresolved': ['tests/ATest.php']}, 'configured unresolved'),
+                 ({'unresolved': ['tests/MissingTest.php']}, 'configured unresolved'),
+                 ({'unchanged_tests': {'revision': self.base, 'sources': ['tests/MissingTest.php']}}, 'unchanged')]
+        for index, (expected, message) in enumerate(cases):
+            with self.subTest(expected=expected), self.assertRaisesRegex(FaultlineError, message):
+                run(self.store, base=self.base, expected=expected, output=self.store.path / f'bad-{index}')
+
+    def test_existing_test_control_rejects_modified_test(self):
+        (self.root / 'tests/ATest.php').write_text('<?php class ATest { function testA() { return 1; } }')
+        self.commit()
+        with self.assertRaisesRegex(FaultlineError, 'unchanged'):
+            run(self.store, base=self.base, expected={'unchanged_tests': {
+                'revision': self.base, 'sources': ['tests/ATest.php']}}, output=self.store.path / 'modified')
 
     def test_missing_baseline_is_a_cold_report_not_an_omission(self):
         with patch('faultline.tia.graph_ci.fetch', return_value={'restored': False, 'reason': 'no_eligible_ancestor_baseline'}):

@@ -18,6 +18,15 @@ Implementation verified on 2026-11-01: the exact published engine tree passes 19
 
 Consumer integration implemented and locally verified (197 tests, two optional native checks skipped): move CI orchestration and experiment assertions into `faultline graph ci` and the pinned `actions/graph` action. Display would-run targets, reasons and dependency paths in the job summary, with complete artifacts. The separate consumer new-file stack now passes live CI: it restores the packaged baseline, discovers a new helper and test through unchanged configuration, verifies paths to existing tests, and publishes a larger source baseline. Job summaries and frozen artifacts expose would-run targets. Original full-CI heads/runs remain intact. Their checked-out merge trees match the predicted heads; complete changed-branch test outcomes remain pending, so no missed-regression rate is claimed.
 
+Next controlled regression check: start with an integration-only baseline from
+the consumer's main branch. Add a new test and deliberately change production
+behavior that an unchanged main-branch test already covers. Freeze the graph
+prediction before running tests; verify the exact affected sources, the unchanged
+existing test blobs, and an unrelated configured test as a negative control.
+Use native tests to establish passing control and failing-change outcomes, while
+retaining all normal CI matrices. Keep the intentional regression isolated in a
+throwaway draft PR. This is a designed sensitivity check, not held-out recall.
+
 ## Installation and inspection objective: verified preview, 2026-11-01
 
 The requested installation skill, dependency package and readable graph/query
