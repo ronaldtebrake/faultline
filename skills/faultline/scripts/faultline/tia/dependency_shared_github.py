@@ -54,8 +54,19 @@ def _fetch(store, output, *, repository, workflow, branch, api):
     # One page and at most ten candidates; old artifacts outside this window are
     # a cold start. No polling or unbounded history scan on every PR.
     listing = api.request(prefix + 'artifacts?name=' + ARTIFACT + '&per_page=30')
+    # GitHub's listing/ID order need not be creation order. Prefer recent
+    # evidence within the bounded page before spending the candidate budget.
+    candidates = []
+    for artifact in listing['artifacts'][:30]:
+        try:
+            created = datetime.fromisoformat(artifact['created_at'].replace('Z', '+00:00'))
+            if created.tzinfo is None:
+                continue
+            candidates.append((created, artifact))
+        except (KeyError, TypeError, ValueError, AttributeError):
+            continue
     rejected = 0
-    for artifact in listing['artifacts'][:10]:
+    for _, artifact in sorted(candidates, key=lambda row: row[0], reverse=True)[:10]:
         if artifact['name'] != ARTIFACT or artifact['expired'] is not False:
             continue
         if type(artifact['id']) is not int or type(artifact['size_in_bytes']) is not int or not 0 < artifact['size_in_bytes'] <= MAX_ARCHIVE:

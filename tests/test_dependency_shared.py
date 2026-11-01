@@ -95,6 +95,7 @@ class SharedBaselineTests(unittest.TestCase):
             archive.writestr('baseline.json', baseline.read_bytes())
         raw = buf.getvalue()
         artifact = {'id': 9, 'name': ARTIFACT, 'expired': False, 'expires_at': '2099-01-01T00:00:00Z',
+                    'created_at': '2026-01-01T00:00:00Z',
                     'size_in_bytes': len(raw), 'digest': 'sha256:' + hashlib.sha256(raw).hexdigest(),
                     'workflow_run': {'id': 7, 'repository_id': 1, 'head_repository_id': 1, 'head_sha': self.base}}
         repo = {'id': 1, 'full_name': 'example/project', 'default_branch': 'main'}
@@ -108,7 +109,28 @@ class SharedBaselineTests(unittest.TestCase):
         class API:
             def request(self, endpoint, **kwargs):
                 return responses[endpoint]
-        return API(), artifact, run
+        api = API()
+        api.responses = responses
+        return api, artifact, run
+
+    def test_newest_valid_artifact_wins_when_listing_and_ids_are_out_of_order(self):
+        baseline = self.baseline()
+        api, old, _ = self.remote(baseline)
+        # Creation time, not a larger ID or position in the page, defines recency.
+        newer = {**old, 'id': 2, 'created_at': '2026-01-02T00:00:00Z'}
+        listing = api.responses['repos/example/project/actions/artifacts?name=' + ARTIFACT + '&per_page=30']
+        listing['artifacts'] = [{**old, 'created_at': 'invalid'}, old, newer]
+        api.responses['repos/example/project/actions/artifacts/2/zip'] = api.responses['repos/example/project/actions/artifacts/9/zip']
+        args = {'repository': 'example/project', 'workflow': 'qa.yml', 'branch': 'main', 'api': api}
+        result = fetch(self.store, self.store.path / 'download.json', **args)
+        self.assertTrue(result['restored'])
+        self.assertEqual(2, result['artifact_id'])
+        # A newer corrupt artifact still falls back to compatible older evidence.
+        newer['digest'] = 'sha256:corrupt'
+        result = fetch(self.store, self.store.path / 'download.json', **args)
+        self.assertTrue(result['restored'])
+        self.assertEqual(9, result['artifact_id'])
+        self.assertEqual(1, result['rejected_candidates'])
 
     def test_github_trust_rejects_forks_other_workflows_pr_runs_wrong_attempts_and_expired_artifacts(self):
         baseline = self.baseline()
