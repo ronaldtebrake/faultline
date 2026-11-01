@@ -21,7 +21,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - uses: ronaldtebrake/faultline/actions/setup@103a0cda8d0f4ada5eb37f8a52911261f3959628
+      - uses: ronaldtebrake/faultline/actions/setup@de0be647b6d50a46c97c4842b99453c8e4bb73cf
       - name: Restore a trusted ancestor baseline
         env:
           GH_TOKEN: ${{ github.token }}
@@ -42,7 +42,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           base=$(git merge-base "$BASE_SHA" HEAD)
-          "$FAULTLINE_CLI" graph compare --base "$base" --head HEAD > .faultline/ci-graph/impact.json
+          "$FAULTLINE_CLI" assess --base "$base" --head HEAD > .faultline/ci-graph/impact.json
       - name: Package source facts from the default branch
         if: github.event_name == 'push'
         env:
