@@ -23,7 +23,7 @@ to a new release. [Installation](docs/install.md) gives the preview commands.
 | Added/changed/deleted files are reviewable | Regression fixtures cover newly resolved imports, deleted dependencies using an older snapshot, removed targets, cycles, setup inputs and unchanged Git snapshots despite dirty working files. Source inspection remains explicitly commit-based. |
 | Preserve future Jev and Entire work | Graph queries and baseline CI make zero Jev requests. Controlled with/without-Jev comparisons, regression recall and an optional Entire source-graph adapter remain explicit future experiments below. They are not implied by cache reuse. |
 
-Validation: 40 graph/query/shared-baseline checks ran, with 38 passing and two
+Validation: 41 graph/query/shared-baseline checks ran, with 39 passing and two
 optional native checks skipped. The installed package also ran the actual source
 workflow's build, compare and pack commands in separate synthetic checkouts; a
 local restore reused unchanged facts. YAML lint and skill validation passed.
@@ -35,6 +35,13 @@ authenticated that exact producer/artifact, parsed one changed source and reused
 nine unchanged facts. Both installations returned the expected file-to-test path
 with no model requests or test-selection decisions. These are synthetic protocol
 and installation checks, not full application coverage or a measured speedup.
+
+The completion audit also exposed unordered artifact results: an older compatible
+baseline was selected before a newer one. Retrieval now sorts the bounded page by
+creation time before applying its candidate limit. Regression checks cover out-of-
+order IDs, malformed timestamps and fallback from a corrupt newer artifact. The
+[corrected engine's CI](https://github.com/ronaldtebrake/faultline/actions/runs/41289291657)
+passes. Preview installation and the consumer template pin that corrected engine.
 
 The consumer draft used for earlier validation was found closed and was left
 closed. Further installation verification runs in Faultline's own repository.

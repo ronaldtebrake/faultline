@@ -18,11 +18,11 @@ The new installation/graph workflow is currently available on the experimental
 the default branch:
 
 ```sh
-npx skills add https://github.com/ronaldtebrake/faultline/tree/bf9a8368856ede14734f6e8e6962407566da25dd/skills/faultline --skill faultline --global
+npx skills add https://github.com/ronaldtebrake/faultline/tree/103a0cda8d0f4ada5eb37f8a52911261f3959628/skills/faultline --skill faultline --global
 ```
 
 For the matching CLI dependency, append
-`@bf9a8368856ede14734f6e8e6962407566da25dd` to the Git package URL below.
+`@103a0cda8d0f4ada5eb37f8a52911261f3959628` to the Git package URL below.
 This is a commit-pinned preview, not a new tagged release. Project-scoped skill
 installation is also possible, but keep the installed engine ignored instead of
 vendoring it into the application. Commit configuration and dependency pins.
