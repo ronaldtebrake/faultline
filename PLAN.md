@@ -40,6 +40,19 @@ failing files, retains a passing mocked consumer conservatively, and leaves the
 unrelated passing control unresolved. Full remote CI and general recall remain
 separate; no skipping or Jev calls are enabled.
 
+
+Two further reference examples now copy pinned snapshots of open consumer PRs
+onto a clean integration baseline, then stack the copies. Verify identical
+patch bytes and changed-file blobs, preserve the original PRs, and show original,
+incremental-copy and combined-stack predictions before inspecting copy outcomes.
+The original and copied revisions retain the same affected source sets. One
+example retains an existing test and a new test through production dependencies;
+the other retains only a newly added test, with no resolved path from its changed
+production classes. Surface that gap in the review instead of interpreting a
+small candidate set as sufficient coverage. Keep full native CI enabled and
+Jev off. Private references, source paths, summaries and artifacts stay with the
+consumer experiment; update the at-a-glance comparison as CI evidence arrives.
+
 ## Installation and inspection objective: verified preview, 2026-11-01
 
 The requested installation skill, dependency package and readable graph/query
