@@ -9,10 +9,10 @@ given by the user; do not ask again for routine setup within that scope.
 
 Inspect existing Faultline configuration, dependency management and GitHub
 workflows first. Reuse an installed version if it supports the requested commands.
-For CI, prefer `ronaldtebrake/faultline/actions/setup` at a reviewed full commit
+For CI observation, prefer `ronaldtebrake/faultline/actions/graph` at a reviewed full commit
 SHA. GitHub retrieves the package from that commit and installs it under the
 runner's temporary directory. It exports `FAULTLINE_CLI` and `FAULTLINE_PYTHON`.
-Do not commit the Python engine, a wheel, or a private report to the consumer.
+The graph action also restores source facts, produces readable would-run lists in the job summary, verifies optional experiment expectations, and uploads frozen reports and baselines. The standalone `actions/setup` remains available when only installation is needed. Do not commit helper scripts, the Python engine, a wheel, or a private report to the consumer.
 Prefer user-scoped agent-skill installation (`skills add --global`) so the
 bundled skill support files are shared across projects. If the skill is installed
 inside a project instead, keep that installed copy ignored.
@@ -79,3 +79,12 @@ not validate runtime coverage, and unknown paths do not establish independence.
 Return the installed revision, configuration/workflow paths, inventory and query
 results, and the actual CI state. Distinguish locally validated setup from a
 completed live CI run. Explain gaps without inventing test savings or coverage.
+
+
+## Configuration and baseline updates
+
+`faultline.json` is configuration, not the baseline. It declares test source globs, suites, shared inputs and scope. A trusted push builds the complete configured source snapshot and uploads `faultline-baseline-v1`. Later PRs restore compatible facts, parse changed/new files and resolve the graph at their exact head. New tests matching existing globs are discovered without editing configuration. New languages, directories outside configured globs, suites or shared inputs may require a reviewed configuration change; that deliberately invalidates incompatible baselines.
+
+The base artifact is immutable. PR analysis creates a new snapshot and reports additions/removals; it does not overwrite the trusted base. Only explicitly trusted push producers publish replacement baseline artifacts. Full CI still runs all tests, and runtime attribution remains a separate optional integration alongside those runs.
+
+Open the graph job summary for the would-run candidates, reasons and paths. The artifact includes complete HTML/CSV/JSON lists and unresolved targets. On large inventories, the job summary explicitly truncates its display while the artifacts retain every row. Candidates are configured source targets, not a claim about all native cases or complete dependency coverage.

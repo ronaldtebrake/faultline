@@ -7,10 +7,10 @@ this milestone.
 
 For first-time installation, use the skill's [installation workflow](../skills/faultline/references/install.md)
 and [source graph template](../skills/faultline/assets/faultline-graph.yml). It uses
-the commit-pinned setup action, publishes source parser facts on default-branch
+the commit-pinned `actions/graph` action, which installs Faultline, restores source facts, writes a would-run job summary, and publishes source parser facts on default-branch
 pushes and reports PR impact without changing existing test jobs. This initial
 template contains no runtime observations; extend collection alongside existing
-full runs when needed. The package and JSON CLI are the integration boundary.
+full runs when needed. The package and JSON CLI are the integration boundary. Consumers need configuration and CI wiring, with no Python verification, producer-metadata or report-copy helpers. `actions/setup` remains available for installation alone.
 
 `faultline graph baseline pack --producer producer.json --runtime runtime.json
 --output baseline.json` creates a portable bundle containing parser facts and
@@ -47,6 +47,10 @@ from the current run before measuring reuse.
 Local `graph baseline restore --input baseline.json` assumes the caller already
 trusts the producer. A checksum alone does not authenticate a producer. Never
 restore arbitrary PR-uploaded evidence as a trusted production baseline.
+
+## Optional selective execution experiment
+
+The following is separate from graph validation and requires explicit adoption.
 
 # Prepare before pushing; execute in CI
 

@@ -1,0 +1,101 @@
+name: Faultline graph CI
+description: Install the pinned package, restore source facts and show predicted tests alongside full CI.
+inputs:
+  base-ref:
+    description: Target ref used to calculate the cumulative merge base.
+    required: true
+  compare-ref:
+    description: Optional stack target ref for an additional incremental report.
+    default: ''
+  trusted-branch:
+    description: Explicit trusted push branch that publishes compatible baselines.
+    required: true
+  publish-baseline:
+    description: Package and upload this push revision as a new baseline. Never enable for pull_request events.
+    default: 'false'
+  expectations:
+    description: Optional JSON experiment assertions. Routine installations need none.
+    default: '{}'
+  root:
+    description: Repository root relative to the workspace.
+    default: '.'
+  output:
+    description: Fresh report directory relative to root.
+    default: '.faultline/ci-graph'
+  python:
+    description: Python 3.10+ executable already on the runner.
+    default: python3
+  github-token:
+    description: Read-only Actions and contents token for baseline retrieval.
+    default: ${{ github.token }}
+outputs:
+  directory:
+    description: Directory containing frozen reports and the CI summary.
+    value: ${{ steps.paths.outputs.directory }}
+runs:
+  using: composite
+  steps:
+    - name: Install the exact action revision
+      shell: bash
+      env:
+        FAULTLINE_SETUP_PYTHON: ${{ inputs.python }}
+        FAULTLINE_ACTION_PATH: ${{ github.action_path }}
+      run: bash "$FAULTLINE_ACTION_PATH/../setup/install.sh"
+    - id: paths
+      shell: bash
+      env:
+        INPUT_ROOT: ${{ inputs.root }}
+        INPUT_OUTPUT: ${{ inputs.output }}
+      run: |
+        "$FAULTLINE_PYTHON" - <<'PYTHON'
+        import os
+        from pathlib import Path
+        directory = str((Path(os.environ['INPUT_ROOT']) / os.environ['INPUT_OUTPUT']).resolve())
+        if any(c in directory for c in '\r\n'):
+            raise SystemExit('Report directory must not contain line breaks')
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+            stream.write('directory=' + directory + '\n')
+        PYTHON
+    - name: Restore, assess and verify graph evidence
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        INPUT_ROOT: ${{ inputs.root }}
+        INPUT_OUTPUT: ${{ inputs.output }}
+        INPUT_BASE: ${{ inputs.base-ref }}
+        INPUT_COMPARE: ${{ inputs.compare-ref }}
+        INPUT_TRUSTED: ${{ inputs.trusted-branch }}
+        INPUT_PUBLISH: ${{ inputs.publish-baseline }}
+        INPUT_EXPECTATIONS: ${{ inputs.expectations }}
+      run: |
+        args=(--root "$INPUT_ROOT" graph ci --base "$INPUT_BASE" --output "$INPUT_OUTPUT"
+              --trusted-branch "$INPUT_TRUSTED" --expectations "$INPUT_EXPECTATIONS")
+        if [ -n "$INPUT_COMPARE" ]; then args+=(--compare-base "$INPUT_COMPARE"); fi
+        case "$INPUT_PUBLISH" in
+          true) args+=(--publish-baseline) ;;
+          false) ;;
+          *) echo 'publish-baseline must be true or false' >&2; exit 1 ;;
+        esac
+        "$FAULTLINE_CLI" "${args[@]}"
+    - name: Upload source baseline
+      if: ${{ success() && inputs.publish-baseline == 'true' }}
+      uses: actions/upload-artifact@v6
+      with:
+        name: faultline-baseline-v1
+        path: ${{ steps.paths.outputs.directory }}/baseline.json
+        include-hidden-files: true
+        if-no-files-found: error
+        overwrite: true
+        retention-days: 14
+    - name: Upload graph predictions and validation evidence
+      if: ${{ !cancelled() && steps.paths.outputs.directory != '' }}
+      uses: actions/upload-artifact@v6
+      with:
+        name: faultline-graph-${{ github.run_id }}-${{ github.run_attempt }}
+        path: |
+          ${{ steps.paths.outputs.directory }}/
+          !${{ steps.paths.outputs.directory }}/baseline.json
+          !${{ steps.paths.outputs.directory }}/downloaded-baseline.json
+        include-hidden-files: true
+        if-no-files-found: warn
+        retention-days: 14

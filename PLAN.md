@@ -16,6 +16,8 @@ The completed historical with/without-Jev study did not demonstrate incremental 
 
 Implementation verified on 2026-11-01: the exact published engine tree passes 192 tests (two optional native checks skipped). New checks cover zero inference with credentials present, explicit paid opt-in and resume, transitive/deleted paths, mandatory rules, warm parsing, and rejection of graph reports as selective manifests. Workflow Actionlint passes. The private consumer cold/warm graph jobs also pass: the descendant restores the trusted ancestor baseline, reparses two controlled changes, reuses unchanged facts and reports the expected paths with zero Jev calls. Full consumer CI remains running with its original matrices and commands; its complete outcomes and runtime coverage are still pending. No omission policy is enabled.
 
+Consumer integration follow-up: move CI orchestration and experiment assertions into `faultline graph ci` and the pinned `actions/graph` action. Display would-run targets, reasons and dependency paths in the job summary, with complete artifacts. Preserve original full-CI runs while adding a separate new-file stack to validate new node/test discovery and baseline replacement. Compare original full-run failures against frozen predictions; keep incomplete jobs and unknown causes explicit.
+
 ## Installation and inspection objective: verified preview, 2026-11-01
 
 The requested installation skill, dependency package and readable graph/query

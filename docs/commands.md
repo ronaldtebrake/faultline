@@ -97,3 +97,12 @@ Existing commands remain available for research and CI outcome comparison:
 See the [benchmark reference](../skills/faultline/references/benchmark.md) and [execution reference](../skills/faultline/references/execution.md). Relevance is not failure probability; mandatory and unresolved targets remain RUN. Selective PHPUnit, Behat and Playwright execution is available through the explicit [CI pilot](ci.md).
 
 Exit codes: **0** complete, **1** command error, **2** incomplete assessment, **130** uncaught interruption. Caught inference interruptions save an incomplete report and return 2. Explicit execution preserves the runner's exit status.
+
+
+## Packaged graph CI
+
+`faultline graph ci --base <target-ref> --trusted-branch <trusted-push-branch>` restores compatible source facts, calculates the cumulative merge base, freezes assessments and writes `.faultline/ci-graph/summary.md`. In GitHub Actions it also writes `GITHUB_STEP_SUMMARY`. `--compare-base <stack-target-ref>` adds an incremental stack report. Optional `--publish-baseline` packages source facts only on an exact GitHub push revision; the packaged `actions/graph` action uploads it and the reports.
+
+`--expectations '<json>'` is for controlled experiments. Optional fields are `restored` (boolean), `parsed` (exact nonnegative count), `min_reused`, `affected` (test source paths), `new_files`, `new_targets` (test source paths), and `paths` (objects containing `source` and changed `input`). Validation failures keep their reports and prevent baseline publication. Routine installation needs no expectations or consumer verification script.
+
+Reports show which source targets the graph/rules would retain and which remain unresolved. All normal tests still run. A missing baseline takes the cold path; a configuration or engine change requires a compatible new baseline. New files under existing source globs update the next snapshot automatically.

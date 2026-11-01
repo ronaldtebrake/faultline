@@ -5,6 +5,14 @@ from pathlib import Path
 def add_commands(commands):
     graph = commands.add_parser('graph', help='Maintain reusable test dependency evidence')
     actions = graph.add_subparsers(dest='graph_action', required=True)
+    ci = actions.add_parser('ci', help='Restore source facts, assess changes, write CI summaries and optionally package a baseline; full tests stay enabled')
+    ci.add_argument('--base', required=True, help='Target ref; its merge base with HEAD defines the cumulative change')
+    ci.add_argument('--compare-base', help='Optional stack target ref; adds a second incremental report')
+    ci.add_argument('--trusted-branch', help='Explicit trusted GitHub push branch to restore; no branch is trusted implicitly')
+    ci.add_argument('--workflow', help='Producer workflow filename; default derives from GITHUB_WORKFLOW_REF')
+    ci.add_argument('--output', type=Path, help='Fresh report directory, default .faultline/ci-graph')
+    ci.add_argument('--publish-baseline', action='store_true', help='Package source facts from this exact GitHub push; upload is the CI integration\'s responsibility')
+    ci.add_argument('--expectations', help='Optional experiment assertions as a JSON object; routine installations need none')
     build = actions.add_parser('build', help='Index immutable source and resolve test dependencies; no application or Jev calls')
     build.add_argument('--revision', default='HEAD')
     build.add_argument('--output', type=Path)
@@ -48,6 +56,10 @@ def dispatch(store, args):
     from .dependency_graph import build, compare
     def path(value):
         return (store.root / value).resolve() if value else None
+    if args.graph_action == 'ci':
+        from .graph_ci import run
+        return run(store, base=args.base, compare_base=args.compare_base, trusted_branch=args.trusted_branch,
+                   workflow=args.workflow, output=path(args.output), publish_baseline=args.publish_baseline, expected=args.expectations)
     if args.graph_action == 'affected':
         from .dependency_query import affected, file_names
         from ..core import write_json

@@ -15,10 +15,41 @@ from .selection import change, decisions, workspace
 from .source_index import open_index
 
 
+def markdown(document, *, limit=None):
+    """List proposed work, without turning missing paths into omissions."""
+    def cell(value):
+        return escape(str(value)).replace('|', '&#124;').replace('\n', ' ')
+    counts = document['summary']
+    lines = ['## Graph prediction (not applied)', '',
+             'Full CI runs every normal test. Jev is off. Unresolved tests are not safe omissions.', '',
+             f"**Would run: {counts['affected'] + counts['required']} source targets** "
+             f"({counts['affected']} graph hits, {counts['required']} mandatory). "
+             f"**Unresolved: {counts['unresolved']}.**", '',
+             f"Base: `{document['change']['base']}` · Head: `{document['change']['head']}`", '',
+             '| Would-run source target | Reason | Dependency path |', '| --- | --- | --- |']
+    used = len(('\n'.join(lines) + '\n').encode())
+    candidates = [r for r in document['tests'] if r['status'] != 'unresolved']
+    for index, row in enumerate(candidates):
+        path = ' → '.join(row['paths'][0]['path']) if row['paths'] else 'Mandatory execution rule'
+        line = f"| {cell(row['id'])} | {cell(', '.join(row['reasons']))} | {cell(path)} |"
+        if limit and used + len(line.encode()) + 1024 > limit:
+            lines += ['', f"{len(candidates) - index} more candidates are in the complete HTML/CSV artifact."]
+            break
+        lines.append(line)
+        used += len((line + '\n').encode())
+    if not candidates:
+        lines += ['| No positive candidates | Keep full CI; dependency coverage is incomplete | |']
+    graph = document['graph']
+    lines += ['', f"New files: {len(graph.get('added_files', []))}; "
+              f"new test targets: {len(graph.get('added_targets', []))}. "
+              'The artifact includes every target, unresolved rows and all known paths.', '']
+    return '\n'.join(lines)
+
+
 def report(document, output):
     output = Path(output).with_suffix('')
     output.parent.mkdir(parents=True, exist_ok=True)
-    rows = document['tests']
+    rows = sorted(document['tests'], key=lambda r: (r['status'] == 'unresolved', r['id']))
     summary = document['summary']
     heading = f"Graph assessment: {document['change']['id']}"
     note = ('Full CI remains required. Affected paths and mandatory rules identify candidates; '
@@ -30,7 +61,7 @@ def report(document, output):
         f'<title>{escape(heading)}</title><style>body{{font:16px system-ui;margin:2rem;line-height:1.5}}'
         'table{border-collapse:collapse;width:100%}td,th{padding:.6rem;border:1px solid #ccc;text-align:left;'
         'vertical-align:top;white-space:pre-wrap;overflow-wrap:anywhere}code{overflow-wrap:anywhere}</style>'
-        f'<h1>{escape(heading)}</h1><p>{escape(note)}</p><p>{summary["affected"]} affected · '
+        f'<h1>{escape(heading)}</h1><p>{escape(note)}</p><p><strong>Would run (not applied): {summary["affected"] + summary["required"]} source targets.</strong></p><p>{summary["affected"]} affected · '
         f'{summary["required"]} required by rules · {summary["unresolved"]} unresolved</p>'
         f'<p>Base <code>{escape(document["change"]["base"])}</code><br>Head <code>{escape(document["change"]["head"])}</code></p>'
         '<table><thead><tr><th>Status</th><th>Test</th><th>Reasons</th><th>Known paths</th></tr></thead>'
@@ -41,9 +72,7 @@ def report(document, output):
         for row in rows:
             values = [row['status'], row['id'], ', '.join(row['reasons']), '\n'.join(' -> '.join(p['path']) for p in row['paths'])]
             writer.writerow(["'" + v if v.startswith(('=', '+', '-', '@')) else v for v in values])
-    output.with_suffix('.md').write_text(f'# Graph assessment\n\n{note}\n\n'
-        f'Affected: {summary["affected"]}; required by rules: {summary["required"]}; unresolved: {summary["unresolved"]}.\n'
-        '\nSee the accompanying HTML and CSV for test identities and paths.\n', encoding='utf-8')
+    output.with_suffix('.md').write_text(markdown(document), encoding='utf-8')
     return {kind: str(output.with_suffix('.' + kind).resolve()) for kind in ('html', 'md', 'csv')} | {
         'new_jev_requests': 0, 'execution': 'none', 'omission_authorized': False, 'ci_policy': 'full_suite'}
 
