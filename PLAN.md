@@ -14,7 +14,7 @@ All consumer experiment PR titles contain `[WIP] DONT MERGE`; close them after v
 
 The completed historical with/without-Jev study did not demonstrate incremental regression-detection value from Jev. Observed unrelated failures are not automatically missed regressions. Keep Jev available for later controlled research; do not spend on it during this graph-validation milestone. Full-suite coverage, regression recall and CI savings remain unproven.
 
-Implementation verified on 2026-11-01: the exact published engine tree passes 192 tests (two optional native checks skipped). New checks cover zero inference with credentials present, explicit paid opt-in and resume, transitive/deleted paths, mandatory rules, warm parsing, and rejection of graph reports as selective manifests. Workflow Actionlint passes. Live full-CI stack validation remains in progress; no omission policy is enabled.
+Implementation verified on 2026-11-01: the exact published engine tree passes 192 tests (two optional native checks skipped). New checks cover zero inference with credentials present, explicit paid opt-in and resume, transitive/deleted paths, mandatory rules, warm parsing, and rejection of graph reports as selective manifests. Workflow Actionlint passes. The private consumer cold/warm graph jobs also pass: the descendant restores the trusted ancestor baseline, reparses two controlled changes, reuses unchanged facts and reports the expected paths with zero Jev calls. Full consumer CI remains running with its original matrices and commands; its complete outcomes and runtime coverage are still pending. No omission policy is enabled.
 
 ## Installation and inspection objective: verified preview, 2026-11-01
 
