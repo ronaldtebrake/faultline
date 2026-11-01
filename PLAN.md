@@ -51,7 +51,9 @@ the other retains only a newly added test, with no resolved path from its change
 production classes. Surface that gap in the review instead of interpreting a
 small candidate set as sufficient coverage. Keep full native CI enabled and
 Jev off. Private references, source paths, summaries and artifacts stay with the
-consumer experiment; update the at-a-glance comparison as CI evidence arrives.
+consumer experiment; update the at-a-glance comparison as CI evidence arrives. Both copied
+graph CI jobs passed remote parent-baseline restoration and reuse checks. Full
+native QA remains queued; no new recall or performance claim is established.
 
 ## Installation and inspection objective: verified preview, 2026-11-01
 
