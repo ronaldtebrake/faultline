@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import platform
+import posixpath
 import re
 import subprocess
 from pathlib import Path, PurePosixPath
@@ -121,6 +122,39 @@ def engine_identity():
                    for name in ('task_graph.py', 'task_cache.py', 'core.py', 'tia/common.py', 'tia/config.py')})
 
 
+def expand_links(root, commit, files, selected, links):
+    """Bind tracked symlink targets, including directory membership, generically."""
+    result, gaps, visited = {}, set(), set()
+    def visit(path, active):
+        if path in active:
+            gaps.add('cyclic_symlink_input')
+            return
+        if path in visited:
+            return
+        visited.add(path)
+        result[path] = files[path]
+        if files[path]['mode'] == '160000':
+            gaps.add('submodule_input')
+        elif files[path]['mode'] == '120000':
+            if path not in links:
+                links[path] = git_bytes(root, 'show', f'{commit}:{path}').decode('utf-8')
+            target = links[path]
+            resolved = posixpath.normpath(posixpath.join(posixpath.dirname(path), target))
+            if (not target or target.startswith('/') or resolved == '..' or resolved.startswith('../') or
+                    '\\' in target or '\0' in target):
+                gaps.add('external_symlink_input')
+                return
+            targets = [resolved] if resolved in files else [p for p in files if
+                resolved == '.' or p.startswith(resolved.rstrip('/') + '/')]
+            if not targets:
+                gaps.add('untracked_symlink_target')
+            for destination in targets:
+                visit(destination, active | {path})
+    for name in selected:
+        visit(name, set())
+    return result, sorted(gaps)
+
+
 def snapshot(root, ref='HEAD', *, environ=None):
     env = os.environ if environ is None else environ
     commit = revision(root, ref)
@@ -130,6 +164,8 @@ def snapshot(root, ref='HEAD', *, environ=None):
     globals_ = {p: v for p, v in files.items() if p == CONFIG or matches(p, config['global_inputs']) or
                 (p not in owned and not matches(p, config['ignored_inputs']))}
     unmapped = sorted(p for p in globals_ if p != CONFIG and p not in owned and not matches(p, config['global_inputs']))
+    links = {}
+    globals_, global_gaps = expand_links(root, commit, files, globals_, links)
     def environment(names):
         missing = sorted(set(names) - env.keys())
         if missing:
@@ -144,11 +180,10 @@ def snapshot(root, ref='HEAD', *, environ=None):
         task = config['tasks'][name]
         inputs = {p: v for p, v in files.items() if matches(p, task['inputs'])}
         deps = {d: tasks[d]['fingerprint'] for d in task['depends_on']}
-        gaps = []
+        inputs, input_gaps = expand_links(root, commit, files, inputs, links)
+        gaps = sorted(set(global_gaps + input_gaps))
         if task['command'] and not task['cache']:
             gaps.append('cache_disabled')
-        if any(v['mode'] not in ('100644', '100755') for v in {**globals_, **inputs}.values()):
-            gaps.append('symlink_or_submodule_input')
         if any(tasks[d]['gaps'] for d in deps):
             gaps.append('uncacheable_dependency')
         key = digest(dict(version=VERSION, engine=engine, repository=config['repository'], task=name,

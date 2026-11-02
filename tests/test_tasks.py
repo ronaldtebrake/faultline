@@ -183,7 +183,26 @@ class TaskTests(unittest.TestCase):
         del self.config['task_graph']['tasks']['shared']['command']
         (self.root / 'shared/link').symlink_to('../other/code.txt')
         self.commit_config()
+        self.assertTrue(self.rows(preview(self.store))['app']['cacheable'])
+        run(self.store)
+        (self.root / 'other/code.txt').write_text('changed target in another component')
+        self.commit()
+        self.assertEqual('run', self.rows(preview(self.store))['app']['decision'])
+        (self.root / 'shared/outside').symlink_to('/tmp/outside')
+        self.commit()
         self.assertIn('uncacheable_dependency', self.rows(preview(self.store))['app']['gaps'])
+
+    def test_symlink_directory_membership_and_cycles(self):
+        (self.root / 'shared/link').symlink_to('../other', target_is_directory=True)
+        self.commit()
+        run(self.store)
+        (self.root / 'other/new.txt').write_text('new linked directory member')
+        self.commit()
+        self.assertEqual('run', self.rows(preview(self.store))['app']['decision'])
+        (self.root / 'shared/a').symlink_to('b')
+        (self.root / 'shared/b').symlink_to('a')
+        self.commit()
+        self.assertIn('cyclic_symlink_input', self.rows(preview(self.store))['shared']['gaps'])
 
     def test_plan_never_executes_or_requires_complete_checkout(self):
         (self.root / 'app/code.txt').unlink()

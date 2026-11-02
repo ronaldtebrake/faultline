@@ -67,8 +67,10 @@ same access restrictions as normal CI logs; they can contain command output.
 Patterns use case-sensitive shell-style matching on repository-relative paths:
 `*` can cross `/`, `app/**` includes descendants. No negative patterns, brace
 expansions or implicit cwd prefixes. Tracked path names, contents and executable
-modes participate. Added/deleted/renamed files change fingerprints. Symlink and
-submodule inputs disable reuse for their task and dependents in this version.
+modes participate. Added/deleted/renamed files change fingerprints. Internal
+symlinks include their tracked targets and linked-directory membership. External,
+untracked or cyclic symlink targets and submodule inputs disable reuse for their
+task and dependents.
 
 `faultline.json` always affects every task. Every tracked file not owned by any
 task, covered by global inputs or explicitly ignored becomes a global input.
