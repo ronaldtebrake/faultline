@@ -2,6 +2,22 @@
 
 You need Git and Python 3.10+. Faultline reads test source; setup and assessment do not start your application or run tests.
 
+## Task cache preview
+
+The framework-independent task cache and its configuration skill are available
+at reviewed preview commit `31e620108c51736ced314ca3f08c15ebc3f960fb`:
+
+```sh
+npx skills add https://github.com/ronaldtebrake/faultline/tree/31e620108c51736ced314ca3f08c15ebc3f960fb/skills/faultline-tasks --skill faultline-tasks --global
+python3 -m pip install 'git+https://github.com/ronaldtebrake/faultline.git@31e620108c51736ced314ca3f08c15ebc3f960fb'
+```
+
+Run pip inside your existing dependency environment. CI can instead use
+`ronaldtebrake/faultline/actions/tasks@31e620108c51736ced314ca3f08c15ebc3f960fb`.
+The [task contract](../skills/faultline-tasks/references/task-contract.md) explains
+configuration, default full execution and explicit reuse. This preview is not
+a tagged release or a guarantee of complete dependency declarations.
+
 ## With a coding agent
 
 For framework-independent task dependency configuration, also install the

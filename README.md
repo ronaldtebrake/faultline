@@ -1,10 +1,13 @@
 # Faultline
 
-Faultline records test dependencies and explains which tests a file change can
-reach. The dependency graph is the default; Jev is optional and off. It can also use Jev to assess a cumulative PR or MR diff against actual
-test source, reporting proposed selections, reasons and inference costs.
+Faultline fingerprints declared CI task inputs and dependencies so unchanged
+checks can reuse successful results. It also records source relationships and
+explains which tests a file change can reach. Jev remains optional and off.
 
-The goal is to reduce CI work while retaining useful regression detection. Today, Faultline is **report-only by default**: your CI keeps running its tests while you evaluate what Faultline would have selected. An opt-in PHPUnit, Behat or Playwright CI pilot can execute exported selections alongside full-run comparisons.
+The goal is to reduce CI work while retaining useful regression detection.
+Task caching defaults to **full execution for validation**; explicit `--reuse`
+enables successful-result reuse. Source impact assessment remains report-only
+by default. Both paths keep uncertainty visible while you validate the contract.
 
 [![Same change, fewer tests: normal CI runs twelve fictional test files; Faultline proposes three with Jev.](docs/demo/faultline-jev-tia.gif)](docs/demo/faultline-jev-tia.mp4)
 

@@ -21,6 +21,16 @@ time separately from provisioning and CI wall time. Broad application inputs
 may retain entire suites; do not narrow them to improve apparent savings.
 Artifact restoration and pre-runner scheduling are subsequent work.
 
+Implemented preview: task plans, full shadow execution, opt-in result reuse and
+shared GitHub cache transport, plus the installable configuration skill. The
+exact engine tree passes 212 tests (two optional native checks skipped).
+[Fresh-runner CI](https://github.com/ronaldtebrake/faultline/actions/runs/41417169308)
+restores matching successful results into a second job, executes both checks
+fully, then verifies explicit reuse only in the synthetic fixture. Tracked
+internal symlink targets and directory membership are covered generically.
+Consumer validation uses existing inexpensive checks while full application
+CI remains enabled; task-cache eligibility is not a measured application speedup.
+
 ## Current direction: graph default, Jev optional and off
 
 The primary assessment path is the source/runtime dependency graph. `assess` and `select` run without inference; explicit `--jev` enables optional scoring, including resumes. Missing paths stay unresolved and cannot authorize omissions. Keep full consumer CI running while testing graph behavior and caching.
