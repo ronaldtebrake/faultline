@@ -4,6 +4,13 @@ You need Git and Python 3.10+. Faultline reads test source; setup and assessment
 
 ## With a coding agent
 
+For framework-independent task dependency configuration, also install the
+[`faultline-tasks` skill](../skills/faultline-tasks/SKILL.md) from a reviewed
+preview commit containing it. Its [guide](../skills/faultline-tasks/references/task-contract.md)
+uses the packaged `tasks` CLI and `actions/tasks`; older graph-only pins below
+do not contain those commands. Keep CLI/action and skill on the same reviewed
+revision. This new skill requires the CLI separately.
+
 Install the skill once for your agent account. This keeps its bundled support
 files out of consumer repositories. The skill installer needs Node.js/npm:
 

@@ -12,6 +12,12 @@ The goal is to reduce CI work while retaining useful regression detection. Today
 
 ## Inspect dependencies without Jev
 
+For reusable CI check results, use the new [task input graph](docs/tasks.md) and
+[configuration skill](skills/faultline-tasks/SKILL.md). It fingerprints declared
+inputs and transitive dependencies across products. `tasks run` keeps full checks
+running for validation; `tasks run --reuse` explicitly reuses matching successes.
+This is separate from the source graph and parser baseline described below.
+
 Install the [packaged CLI and agent skill](docs/install.md), configure
 `faultline.json`, then run:
 

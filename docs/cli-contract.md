@@ -6,6 +6,15 @@ purpose. Python is the current implementation; a future Rust or Go executable
 can preserve this interface without copying an engine into consumer repositories.
 No performance improvement from another language has been established yet.
 
+## Task input graph
+
+`tasks plan` returns a sealed schema-2 `task-plan`, version 1, without execution.
+`tasks run` returns a sealed `task-run`, version 1, and the aggregate exit code.
+See the [task contract](../skills/faultline-tasks/references/task-contract.md) for
+configuration, reasons, shared result caching and the explicit `--reuse` option.
+Task-result records are separate from source graph baselines. These commands
+invoke no model and require no framework-specific source adapters.
+
 ## Default assessment
 
 `assess --base <merge-base> --head <head>` and `select --base <merge-base>`

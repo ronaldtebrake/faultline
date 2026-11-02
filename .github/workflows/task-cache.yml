@@ -1,0 +1,80 @@
+name: Task cache protocol
+on:
+  push:
+    branches: [codex/task-input-cache]
+  pull_request:
+    paths:
+      - 'skills/faultline/scripts/faultline/task*.py'
+      - 'actions/tasks/**'
+      - 'tests/test_tasks.py'
+      - 'tests/fixtures/task-cache/**'
+      - '.github/workflows/task-cache.yml'
+permissions:
+  contents: read
+jobs:
+  cold:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Prepare committed synthetic consumer
+        run: |
+          cp -R tests/fixtures/task-cache "$RUNNER_TEMP/task-consumer"
+          git -C "$RUNNER_TEMP/task-consumer" init -q
+          git -C "$RUNNER_TEMP/task-consumer" -c user.name=Fixture -c user.email=fixture@example.invalid add .
+          git -C "$RUNNER_TEMP/task-consumer" -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm Fixture
+          echo "FAULTLINE_RUNTIME=$(python3 --version)-$ImageOS-$ImageVersion" >> "$GITHUB_ENV"
+      - uses: ./actions/tasks
+        with:
+          root: ${{ runner.temp }}/task-consumer
+          mode: shadow
+  warm:
+    needs: cold
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Prepare a fresh committed synthetic consumer
+        run: |
+          cp -R tests/fixtures/task-cache "$RUNNER_TEMP/task-consumer"
+          git -C "$RUNNER_TEMP/task-consumer" init -q
+          git -C "$RUNNER_TEMP/task-consumer" -c user.name=Fixture -c user.email=fixture@example.invalid add .
+          git -C "$RUNNER_TEMP/task-consumer" -c user.name=Fixture -c user.email=fixture@example.invalid commit -qm Fixture
+          echo "FAULTLINE_RUNTIME=$(python3 --version)-$ImageOS-$ImageVersion" >> "$GITHUB_ENV"
+      - id: warm
+        uses: ./actions/tasks
+        with:
+          root: ${{ runner.temp }}/task-consumer
+          mode: shadow
+      - name: Verify remote reuse predictions and full execution
+        env:
+          EVIDENCE: ${{ steps.warm.outputs.directory }}
+          RESTORED: ${{ steps.warm.outputs.cache-matched-key }}
+        run: |
+          "$FAULTLINE_PYTHON" - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          assert os.environ['RESTORED'], 'No remote archive restored'
+          result = json.loads((Path(os.environ['EVIDENCE']) / 'execution/result.json').read_text())
+          assert result['mode'] == 'shadow' and result['exit_code'] == 0
+          checks = [r for r in result['tasks'] if r['status'] != 'inputs']
+          assert len(checks) == 2
+          assert all(r['status'] == 'passed' and r['cache_match_before_run'] for r in checks), checks
+          print('Both full checks ran after restoring successful matching results from another job')
+          PYTHON
+      - name: Verify explicit reuse only in the synthetic fixture
+        run: |
+          "$FAULTLINE_CLI" --root "$RUNNER_TEMP/task-consumer" tasks run --reuse --output "$RUNNER_TEMP/reused"
+          "$FAULTLINE_PYTHON" - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ['RUNNER_TEMP'])
+          result = json.loads((root / 'reused/result.json').read_text())
+          assert [r['status'] for r in result['tasks'] if r['status'] != 'inputs'] == ['reused', 'reused']
+          assert (root / 'task-consumer/.faultline/api-executions').read_text() == '1'
+          assert (root / 'task-consumer/.faultline/web-executions').read_text() == '1'
+          PYTHON
