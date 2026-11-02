@@ -2,7 +2,30 @@
 
 You need Git and Python 3.10+. Faultline reads test source; setup and assessment do not start your application or run tests.
 
+## Task cache preview
+
+The framework-independent task cache and its configuration skill are available
+at reviewed preview commit `31e620108c51736ced314ca3f08c15ebc3f960fb`:
+
+```sh
+npx skills add https://github.com/ronaldtebrake/faultline/tree/31e620108c51736ced314ca3f08c15ebc3f960fb/skills/faultline-tasks --skill faultline-tasks --global
+python3 -m pip install 'git+https://github.com/ronaldtebrake/faultline.git@31e620108c51736ced314ca3f08c15ebc3f960fb'
+```
+
+Run pip inside your existing dependency environment. CI can instead use
+`ronaldtebrake/faultline/actions/tasks@31e620108c51736ced314ca3f08c15ebc3f960fb`.
+The [task contract](../skills/faultline-tasks/references/task-contract.md) explains
+configuration, default full execution and explicit reuse. This preview is not
+a tagged release or a guarantee of complete dependency declarations.
+
 ## With a coding agent
+
+For framework-independent task dependency configuration, also install the
+[`faultline-tasks` skill](../skills/faultline-tasks/SKILL.md) from a reviewed
+preview commit containing it. Its [guide](../skills/faultline-tasks/references/task-contract.md)
+uses the packaged `tasks` CLI and `actions/tasks`; older graph-only pins below
+do not contain those commands. Keep CLI/action and skill on the same reviewed
+revision. This new skill requires the CLI separately.
 
 Install the skill once for your agent account. This keeps its bundled support
 files out of consumer repositories. The skill installer needs Node.js/npm:

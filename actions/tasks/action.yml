@@ -1,0 +1,115 @@
+name: Faultline task cache
+description: Preview task inputs or execute complete checks with shared successful-result caching.
+inputs:
+  mode:
+    description: plan executes nothing; shadow runs every requested check; reuse explicitly permits matching result reuse.
+    default: shadow
+  tasks:
+    description: Space-separated configured task IDs. Empty selects every task.
+    default: ''
+  base:
+    description: Optional comparison revision for input-change explanations.
+    default: ''
+  root:
+    description: Repository root relative to the workspace.
+    default: '.'
+  python:
+    description: Python 3.10+ executable already available on the runner.
+    default: python3
+outputs:
+  directory:
+    description: Frozen task plans, outcomes and command logs.
+    value: ${{ steps.paths.outputs.directory }}
+  cache-matched-key:
+    description: Shared cache archive restored. Individual records are validated separately.
+    value: ${{ steps.restore.outputs.cache-matched-key }}
+runs:
+  using: composite
+  steps:
+    - name: Install pinned Faultline package
+      shell: bash
+      env:
+        FAULTLINE_SETUP_PYTHON: ${{ inputs.python }}
+        FAULTLINE_ACTION_PATH: ${{ github.action_path }}
+      run: bash "$FAULTLINE_ACTION_PATH/../setup/install.sh"
+    - id: paths
+      shell: bash
+      env:
+        INPUT_ROOT: ${{ inputs.root }}
+        INPUT_MODE: ${{ inputs.mode }}
+      run: |
+        case "$INPUT_MODE" in plan|shadow|reuse) ;; *) echo 'Invalid task mode' >&2; exit 1 ;; esac
+        "$FAULTLINE_PYTHON" - <<'PYTHON'
+        import os, uuid
+        from pathlib import Path
+        root = Path(os.environ['INPUT_ROOT']).resolve()
+        token = uuid.uuid4().hex
+        folder = root / '.faultline' / ('task-ci-' + token)
+        folder.mkdir(parents=True, exist_ok=False)
+        (root / '.faultline' / '.gitignore').write_text('*\n')
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as stream:
+            for key, value in [('directory', folder), ('cache', root / '.faultline' / 'task-results'), ('token', token)]:
+                if any(c in str(value) for c in '\r\n'):
+                    raise SystemExit('Paths must not contain line breaks')
+                stream.write(f'{key}={value}\n')
+        PYTHON
+    - id: fingerprint
+      shell: bash
+      env:
+        INPUT_ROOT: ${{ inputs.root }}
+        INPUT_TASKS: ${{ inputs.tasks }}
+        INPUT_BASE: ${{ inputs.base }}
+      run: |
+        args=(--root "$INPUT_ROOT" tasks plan --github-output)
+        read -r -a names <<< "$INPUT_TASKS"
+        for name in "${names[@]}"; do args+=(--task "$name"); done
+        if [ -n "$INPUT_BASE" ]; then args+=(--base "$INPUT_BASE"); fi
+        "$FAULTLINE_CLI" "${args[@]}"
+    - id: restore
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.paths.outputs.cache }}
+        key: faultline-tasks-v1-${{ steps.fingerprint.outputs.cache-namespace }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ steps.paths.outputs.token }}
+        restore-keys: faultline-tasks-v1-${{ steps.fingerprint.outputs.cache-namespace }}-
+    - name: Show task decisions before execution
+      shell: bash
+      env:
+        INPUT_ROOT: ${{ inputs.root }}
+        INPUT_TASKS: ${{ inputs.tasks }}
+        INPUT_BASE: ${{ inputs.base }}
+        OUTPUT_DIRECTORY: ${{ steps.paths.outputs.directory }}
+      run: |
+        args=(--root "$INPUT_ROOT" tasks plan --github-summary --output "$OUTPUT_DIRECTORY/plan.json")
+        read -r -a names <<< "$INPUT_TASKS"
+        for name in "${names[@]}"; do args+=(--task "$name"); done
+        if [ -n "$INPUT_BASE" ]; then args+=(--base "$INPUT_BASE"); fi
+        "$FAULTLINE_CLI" "${args[@]}"
+    - id: execute
+      if: ${{ inputs.mode != 'plan' }}
+      shell: bash
+      env:
+        INPUT_ROOT: ${{ inputs.root }}
+        INPUT_TASKS: ${{ inputs.tasks }}
+        INPUT_MODE: ${{ inputs.mode }}
+        OUTPUT_DIRECTORY: ${{ steps.paths.outputs.directory }}
+      run: |
+        args=(--root "$INPUT_ROOT" tasks run --github-summary --output "$OUTPUT_DIRECTORY/execution")
+        read -r -a names <<< "$INPUT_TASKS"
+        for name in "${names[@]}"; do args+=(--task "$name"); done
+        if [ "$INPUT_MODE" = reuse ]; then args+=(--reuse); fi
+        "$FAULTLINE_CLI" "${args[@]}"
+    - name: Save successful records and invalidations
+      if: ${{ !cancelled() && inputs.mode != 'plan' && (steps.execute.outcome == 'success' || steps.execute.outcome == 'failure') }}
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ steps.paths.outputs.cache }}
+        key: faultline-tasks-v1-${{ steps.fingerprint.outputs.cache-namespace }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ steps.paths.outputs.token }}
+    - name: Upload task evidence
+      if: ${{ !cancelled() && steps.paths.outputs.directory != '' }}
+      uses: actions/upload-artifact@v6
+      with:
+        name: faultline-tasks-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ steps.paths.outputs.token }}
+        path: ${{ steps.paths.outputs.directory }}
+        include-hidden-files: true
+        if-no-files-found: warn
+        retention-days: 14

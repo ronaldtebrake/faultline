@@ -55,7 +55,7 @@ def load_config(root):
     raw = read_json(root / 'faultline.json')
     if not isinstance(raw, dict) or raw.get('schema_version') != SCHEMA:
         raise FaultlineError('Create faultline.json with schema_version: 2; see docs/install.md')
-    if set(raw) - {'schema_version', 'repository', 'suites', 'evaluator', 'scope'}:
+    if set(raw) - {'schema_version', 'repository', 'suites', 'evaluator', 'scope', 'task_graph'}:
         raise FaultlineError('Unknown faultline.json configuration field')
     if not isinstance(raw.get('suites'), list) or not raw['suites']:
         raise FaultlineError('Configure at least one suite')

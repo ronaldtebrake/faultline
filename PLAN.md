@@ -1,5 +1,36 @@
 # Validation plan
 
+## Priority: task input contracts and result reuse, 2026-11-02
+
+Use a framework-independent task graph to reduce CI work. Read existing package
+and CI declarations, then record reviewed input boundaries, transitive task
+dependencies and runtime/fixture identities in `faultline.json`. Framework
+adapters and per-scenario server tracing are not prerequisites. Keep source
+relationships as supplementary positive evidence; retain optional Jev work off.
+
+Implement immutable input fingerprints, new/deleted-file membership changes,
+global fallback for unmapped files and successful-result reuse. Cache task
+results separately from parser facts. The default runner executes full checks
+even on cache matches; reuse requires an explicit option. Keep full consumer CI.
+
+Ship a self-contained `faultline-tasks` skill for initial configuration and
+maintenance when dependencies change. Integrate through the package/shared
+action without consumer helpers. Validate cold/warm sharing, independent and
+transitive changes, new inputs and failure invalidation. Measure eligible task
+time separately from provisioning and CI wall time. Broad application inputs
+may retain entire suites; do not narrow them to improve apparent savings.
+Artifact restoration and pre-runner scheduling are subsequent work.
+
+Implemented preview: task plans, full shadow execution, opt-in result reuse and
+shared GitHub cache transport, plus the installable configuration skill. The
+exact engine tree passes 212 tests (two optional native checks skipped).
+[Fresh-runner CI](https://github.com/ronaldtebrake/faultline/actions/runs/41417169308)
+restores matching successful results into a second job, executes both checks
+fully, then verifies explicit reuse only in the synthetic fixture. Tracked
+internal symlink targets and directory membership are covered generically.
+Consumer validation uses existing inexpensive checks while full application
+CI remains enabled; task-cache eligibility is not a measured application speedup.
+
 ## Current direction: graph default, Jev optional and off
 
 The primary assessment path is the source/runtime dependency graph. `assess` and `select` run without inference; explicit `--jev` enables optional scoring, including resumes. Missing paths stay unresolved and cannot authorize omissions. Keep full consumer CI running while testing graph behavior and caching.

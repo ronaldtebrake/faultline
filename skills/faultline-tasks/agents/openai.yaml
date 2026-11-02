@@ -1,0 +1,4 @@
+interface:
+  display_name: "Faultline Task Dependencies"
+  short_description: "Configure and maintain reusable CI task inputs"
+  default_prompt: "Use $faultline-tasks to configure or update this repository’s task dependencies and validate the resulting CI cache decisions."

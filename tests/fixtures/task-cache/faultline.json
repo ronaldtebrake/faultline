@@ -1,0 +1,26 @@
+{
+  "schema_version": 2,
+  "repository": "faultline/synthetic-task-cache",
+  "task_graph": {
+    "version": 1,
+    "context": {"fixtures": "tracked-json", "runner": "github-ubuntu-24.04"},
+    "env": ["FAULTLINE_RUNTIME"],
+    "global_inputs": ["checks/**"],
+    "tasks": {
+      "shared": {"inputs": ["data/shared.json"]},
+      "api": {
+        "inputs": ["data/api.json"],
+        "depends_on": ["shared"],
+        "command": ["python3", "checks/check.py", "data/api.json"],
+        "cache": true,
+        "env": []
+      },
+      "web": {
+        "inputs": ["data/web.json"],
+        "command": ["python3", "checks/check.py", "data/web.json"],
+        "cache": true,
+        "env": []
+      }
+    }
+  }
+}

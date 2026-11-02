@@ -4,7 +4,7 @@ import json
 import sys
 
 from . import __version__
-from .core import FaultlineError, Store, repo_root
+from .core import FaultlineError, Store, repo_root, read_json
 from .tia.cli import add_commands, dispatch
 
 
@@ -13,6 +13,8 @@ def parser():
     cli.add_argument('--root', default='.', help='Target repository (defaults to the current Git root)')
     cli.add_argument('--version', action='version', version=f'faultline {__version__}')
     commands = cli.add_subparsers(dest='command', required=True)
+    from .task_cli import add_commands as add_tasks
+    add_tasks(commands)
     from .tia.workflow_cli import add_commands as add_workflow
     add_workflow(commands)
     from .tia.ci_cli import add_commands as add_ci
@@ -29,7 +31,10 @@ def main(argv=None):
     args = parser().parse_args(argv)
     try:
         store = Store(repo_root(args.root))
-        if args.command in ('setup', 'assess', 'report'):
+        if args.command == 'tasks':
+            from .task_cli import dispatch as task_dispatch
+            result = task_dispatch(store, args)
+        elif args.command in ('setup', 'assess', 'report'):
             from .tia.workflow_cli import dispatch as workflow
             result = workflow(store, args)
         elif args.command == 'graph':
@@ -43,14 +48,19 @@ def main(argv=None):
             result = {'storage': str(store.path), 'status': 'Create faultline.json, then run init to validate sources',
                       'execution': 'none', 'jev_requests': 0}
             if (store.root / 'faultline.json').exists():
-                from .tia.config import load_config
-                from .tia.source_index import open_index
-                _, inventory, provenance = open_index(store, load_config(store.root), args.revision)
-                result.update(index=provenance, complete=inventory['complete'], status='source inventory inspected')
+                raw = read_json(store.root / 'faultline.json')
+                if isinstance(raw, dict) and raw.get('task_graph') and not raw.get('suites'):
+                    from .task_cache import preview
+                    result.update(tasks=preview(store, head=args.revision), status='task input contract inspected')
+                else:
+                    from .tia.config import load_config
+                    from .tia.source_index import open_index
+                    _, inventory, provenance = open_index(store, load_config(store.root), args.revision)
+                    result.update(index=provenance, complete=inventory['complete'], status='source inventory inspected')
         else:
             result = dispatch(store, args)
         print(json.dumps(result, indent=2, ensure_ascii=False))
-        if args.command in ('run', 'ci-run'):
+        if args.command in ('run', 'ci-run') or (args.command == 'tasks' and args.task_command == 'run'):
             return result['exit_code']
         if args.command == 'select' and not result.get('dry_run') and result.get('semantic', {}).get('targets', 0) and not result.get('semantic_complete'):
             return 2
